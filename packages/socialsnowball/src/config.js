@@ -16,10 +16,10 @@ export const ADVERTISER_NAME = process.env.ADVERTISER_NAME || 'Enhance Picklebal
 export const MERCHANT_NAME = process.env.SOCIALSNOWBALL_MERCHANT || 'Enhance Pickleball';
 
 // SocialSnowball status mappings
-// "Ready" = ready for payout (approved)
-// "Paid" = already paid out (approved)
-// "Pending" = awaiting approval
+// API returns: "created", "ready_for_payout", "paid", etc.
 export const STATUS_MAPPINGS = {
+  'created': 'pending',
+  'ready_for_payout': 'approved',
   'ready': 'approved',
   'paid': 'approved',
   'pending': 'pending',
@@ -28,70 +28,74 @@ export const STATUS_MAPPINGS = {
 };
 
 // Field name mappings from SocialSnowball to target schema
-// These are initial guesses based on common affiliate platform patterns
-// They will be updated after we see the actual API response structure
+// Based on actual API response from search-payables endpoint
 export const FIELD_MAPPINGS = {
-  // Transaction ID variations
-  transaction_id: ['id', 'payout_id', 'payoutId', 'transaction_id', 'transactionId', 'commission_id', 'commissionId'],
+  // Transaction ID
+  transaction_id: ['id'],
 
   // Date fields
-  order_date: ['created_at', 'createdAt', 'date', 'order_date', 'orderDate', 'commission_date', 'commissionDate'],
-  click_date: ['click_date', 'clickDate', 'clicked_at', 'clickedAt'],
-  validation_date: ['approved_at', 'approvedAt', 'validated_at', 'validatedAt', 'paid_at', 'paidAt'],
-  modified_date: ['updated_at', 'updatedAt', 'modified_at', 'modifiedAt'],
+  order_date: ['source_item_external_created_at', 'created_at'],
+  click_date: [],
+  validation_date: [],
+  modified_date: [],
 
   // Currency
-  currency_id: ['currency', 'currency_code', 'currencyCode', 'currency_id'],
+  currency_id: ['currency'],
 
-  // Amounts - SocialSnowball likely uses 'amount', 'commission', 'payout' etc.
-  sale_amount: ['sale_amount', 'saleAmount', 'order_total', 'orderTotal', 'total', 'revenue', 'order_amount'],
-  commission_amount: ['amount', 'commission', 'commission_amount', 'commissionAmount', 'payout', 'payout_amount', 'earnings'],
+  // Amounts are pre-processed and flattened in index.js
+  sale_amount: ['_sale_amount'],
+  commission_amount: ['_commission_amount'],
 
   // Status
-  status: ['status', 'state', 'payout_status', 'payoutStatus'],
+  status: ['status'],
 
   // Sub IDs / tracking
-  sub_id_1: ['sub_id', 'subId', 'sub_id_1', 'affiliate_id', 'affiliateId'],
-  sub_id_2: ['sub_id_2', 'subId2', 'campaign_id', 'campaignId'],
-  sub_id_3: ['sub_id_3', 'subId3', 'link_id', 'linkId'],
-  sub_id_4: ['sub_id_4', 'subId4'],
-  sub_id_5: ['sub_id_5', 'subId5'],
-  sub_id_6: ['sub_id_6', 'subId6'],
+  sub_id_1: ['source_item_attribution_value'],  // Discount code e.g. "KITCHEN"
+  sub_id_2: ['affiliate_id'],
+  sub_id_3: ['segment_id'],
+  sub_id_4: [],
+  sub_id_5: [],
+  sub_id_6: [],
 
   // Other optional fields
-  decline_reason: ['decline_reason', 'declineReason', 'rejection_reason', 'reason', 'notes'],
-  paid_to_publisher: ['paid', 'is_paid', 'isPaid', 'paid_out', 'paidOut'],
-  clickout_url: ['url', 'link', 'destination_url', 'landing_url', 'source_url'],
-  product_title: ['product', 'product_title', 'productTitle', 'product_name', 'productName', 'item'],
-  order_ref: ['order_id', 'orderId', 'order_ref', 'orderRef', 'reference', 'external_id', 'shop_order_id'],
+  decline_reason: ['payout_failure_reason', 'status_description'],
+  paid_to_publisher: [],
+  clickout_url: [],
+  product_title: [],
+  order_ref: ['source_item_external_id'],  // Shopify order ID
 };
 
 /**
  * Extract product title from SocialSnowball record
- * Will be refined after seeing actual data structure
  */
 export function extractProductTitle(record) {
-  // Try direct fields first
-  const directFields = ['product', 'product_title', 'productTitle', 'product_name', 'productName', 'item', 'item_name'];
-  for (const field of directFields) {
-    if (record[field]) return String(record[field]);
-  }
-
-  // Try nested structures (common in e-commerce platforms)
-  if (record.line_items?.length > 0) {
-    const titles = record.line_items
-      .map(item => item.name || item.title || item.product_name)
-      .filter(Boolean);
-    return titles.join(', ');
-  }
-
-  if (record.order?.line_items?.length > 0) {
-    const titles = record.order.line_items
-      .map(item => item.name || item.title)
-      .filter(Boolean);
-    return titles.join(', ');
-  }
-
+  // SocialSnowball doesn't include product info in payout data
   return '';
+}
+
+/**
+ * Extract commission amount from nested amount.value field
+ * Values are in cents as strings (e.g., "464970" = $4649.70)
+ */
+export function extractCommissionAmount(record) {
+  if (record.amount?.value) {
+    return parseInt(record.amount.value, 10);
+  }
+  return 0;
+}
+
+/**
+ * Extract sale amount from nested associated_revenue.value field
+ * Values are in cents as strings
+ */
+export function extractSaleAmount(record) {
+  if (record.associated_revenue?.value) {
+    return parseInt(record.associated_revenue.value, 10);
+  }
+  // Fallback to commission base
+  if (record.associated_commission_base?.value) {
+    return parseInt(record.associated_commission_base.value, 10);
+  }
+  return 0;
 }
 

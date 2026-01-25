@@ -11,7 +11,7 @@ import { scrapePayouts, debugPageStructure } from './scraper.js';
 import { createTransformer } from '@kitchen/shared/transformer';
 import { uploadToSheets, validateAccess, getServiceAccountEmail, createSpreadsheet } from '@kitchen/shared/sheets';
 import { writeFile } from 'fs/promises';
-import { FIELD_MAPPINGS, STATUS_MAPPINGS, ADVERTISER_ID, ADVERTISER_NAME, extractProductTitle } from './config.js';
+import { FIELD_MAPPINGS, STATUS_MAPPINGS, ADVERTISER_ID, ADVERTISER_NAME, extractProductTitle, extractCommissionAmount, extractSaleAmount } from './config.js';
 
 // Create SocialSnowball-specific transformer
 const transformer = createTransformer({
@@ -109,8 +109,16 @@ async function main() {
         }
       }
 
+      // Pre-process records to flatten nested amount fields
+      const processedPayouts = rawPayouts.map(record => ({
+        ...record,
+        // Flatten nested amount fields for the transformer
+        _commission_amount: extractCommissionAmount(record),
+        _sale_amount: extractSaleAmount(record),
+      }));
+
       console.log('🔄 Transforming data to target schema...');
-      records = transformer.transformRecords(rawPayouts);
+      records = transformer.transformRecords(processedPayouts);
       console.log(`✅ Transformed records: ${records.length}\n`);
 
       const jsonPath = `socialsnowball-payouts-${new Date().toISOString().slice(0, 10)}.json`;
