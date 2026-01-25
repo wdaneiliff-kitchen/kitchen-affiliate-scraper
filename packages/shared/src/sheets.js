@@ -80,7 +80,7 @@ export async function uploadToSheets({
       if (txIdIndex !== -1) {
         for (let i = 1; i < existingRows.length; i++) {
           const txId = existingRows[i][txIdIndex];
-          if (txId) existingTransactionIds.add(txId);
+          if (txId) existingTransactionIds.add(String(txId));
         }
         console.log(`📋 Found ${existingTransactionIds.size} existing transaction IDs`);
       }
@@ -92,7 +92,7 @@ export async function uploadToSheets({
 
     if (dedupeByTransactionId && existingTransactionIds.size > 0) {
       recordsToUpload = records.filter(record => {
-        if (existingTransactionIds.has(record.transaction_id)) {
+        if (existingTransactionIds.has(String(record.transaction_id))) {
           skippedCount++;
           return false;
         }

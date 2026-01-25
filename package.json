@@ -1,0 +1,13 @@
+{
+  "name": "kitchen-scripts",
+  "private": true,
+  "description": "Affiliate commission scrapers monorepo",
+  "scripts": {
+    "bixgrow": "pnpm --filter @kitchen/bixgrow start",
+    "bixgrow:scrape": "pnpm --filter @kitchen/bixgrow scrape",
+    "socialsnowball": "pnpm --filter @kitchen/socialsnowball start",
+    "socialsnowball:scrape": "pnpm --filter @kitchen/socialsnowball scrape"
+  },
+  "packageManager": "pnpm@9.14.2"
+}
+

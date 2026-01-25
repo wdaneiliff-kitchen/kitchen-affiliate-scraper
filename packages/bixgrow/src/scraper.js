@@ -1,31 +1,14 @@
-import puppeteer from 'puppeteer';
-import { execSync } from 'child_process';
+import {
+  sleep,
+  findSelector,
+  launchBrowser,
+  createStealthPage,
+  setupNetworkInterception,
+  getCookieString,
+} from '@kitchen/shared/scraper-base';
 
 const LOGIN_URL = 'https://affiliate.joola.com/login';
 const COMMISSIONS_URL = 'https://affiliate.joola.com/commissions';
-
-/** Simple sleep helper */
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-/**
- * Find system Chrome on macOS (Puppeteer's bundled Chrome has compatibility issues)
- */
-function findSystemChrome() {
-  const chromePaths = [
-    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-    '/Applications/Chromium.app/Contents/MacOS/Chromium',
-  ];
-
-  for (const p of chromePaths) {
-    try {
-      execSync(`test -f "${p}"`, { stdio: 'ignore' });
-      return p;
-    } catch (e) {
-      // Not found, try next
-    }
-  }
-  return undefined; // Fall back to Puppeteer's bundled Chrome
-}
 
 /**
  * Scrapes commission data from BixGrow affiliate dashboard.
@@ -43,100 +26,44 @@ export async function scrapeCommissions({ email, password, headless = true, star
   console.log('🚀 Starting BixGrow scraper...');
   console.log(`   Headless: ${headless}`);
 
-  const executablePath = findSystemChrome();
-  if (executablePath) {
-    console.log(`🌐 Using system Chrome: ${executablePath}`);
-  }
-
   let browser;
   try {
     console.log('🌐 Launching browser...');
-    browser = await puppeteer.launch({
-      headless: headless ? 'new' : false,
-      executablePath,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-blink-features=AutomationControlled',
-        '--disable-infobars',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--window-size=1920,1080',
-      ],
-      defaultViewport: { width: 1920, height: 1080 },
-      protocolTimeout: 60000,
-    });
-    console.log('✅ Browser launched successfully');
+    browser = await launchBrowser({ headless });
   } catch (launchError) {
     console.error('❌ Failed to launch browser:', launchError.message);
     throw launchError;
   }
 
-  const page = await browser.newPage();
-
-  // Set a realistic user agent to avoid bot detection
-  await page.setUserAgent(
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-  );
-
-  // Hide webdriver property
-  await page.evaluateOnNewDocument(() => {
-    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-  });
+  const page = await createStealthPage(browser);
 
   // Store intercepted API responses and auth token
   const apiResponses = [];
   let authToken = null;
 
   // Set up network interception to capture commission data from API calls
-  await page.setRequestInterception(true);
-
-  page.on('request', (request) => {
-    request.continue();
-  });
-
-  page.on('response', async (response) => {
-    const url = response.url();
-    const contentType = response.headers()['content-type'] || '';
-
-    // Log all API calls for debugging
-    if (url.includes('/api/')) {
-      console.log(`📡 API: ${response.request().method()} ${url.split('?')[0]} [${response.status()}]`);
-    }
-
-    // Capture ALL JSON API responses to help debug what endpoints exist
-    if (contentType.includes('application/json') && url.includes('/api/')) {
-      try {
-        const text = await response.text();
-        const data = JSON.parse(text);
-
-        // Log a preview of every API response
-        const preview = JSON.stringify(data).slice(0, 150);
-        console.log(`  └─ ${preview}${preview.length >= 150 ? '...' : ''}`);
-
-        // Capture auth token from login response
-        if (url.includes('/login') && data.token) {
-          authToken = data.token;
-          console.log(`  └─ 🔑 Captured auth token`);
-        }
-
-        // Extract the actual data array - handle nested structures like { data: { data: [...] } }
-        let records = null;
-        if (data.data?.data && Array.isArray(data.data.data)) {
-          records = data.data.data;  // Nested: { data: { data: [...] } }
-        } else if (Array.isArray(data.data)) {
-          records = data.data;  // Direct: { data: [...] }
-        }
-
-        // Capture responses that look like commission/conversion data
-        if (records && records.length > 0 && url.includes('conversion')) {
-          console.log(`  └─ 💾 CAPTURED: ${records.length} records from conversions API`);
-          apiResponses.push({ url, data, records });
-        }
-      } catch (e) {
-        // Response body already consumed or not JSON
+  await setupNetworkInterception(page, {
+    onApiResponse: ({ url, data }) => {
+      // Capture auth token from login response
+      if (url.includes('/login') && data.token) {
+        authToken = data.token;
+        console.log(`  └─ 🔑 Captured auth token`);
       }
-    }
+
+      // Extract the actual data array - handle nested structures like { data: { data: [...] } }
+      let records = null;
+      if (data.data?.data && Array.isArray(data.data.data)) {
+        records = data.data.data;  // Nested: { data: { data: [...] } }
+      } else if (Array.isArray(data.data)) {
+        records = data.data;  // Direct: { data: [...] }
+      }
+
+      // Capture responses that look like commission/conversion data
+      if (records && records.length > 0 && url.includes('conversion')) {
+        console.log(`  └─ 💾 CAPTURED: ${records.length} records from conversions API`);
+        apiResponses.push({ url, data, records });
+      }
+    },
   });
 
   try {
@@ -152,7 +79,6 @@ export async function scrapeCommissions({ email, password, headless = true, star
     // Step 2: Fill in login credentials
     console.log('🔐 Entering credentials...');
 
-    // Try different possible selectors for email field
     const emailSelector = await findSelector(page, [
       'input[type="email"]',
       'input[name="email"]',
@@ -177,7 +103,6 @@ export async function scrapeCommissions({ email, password, headless = true, star
     // Step 3: Submit login form
     console.log('🔑 Submitting login...');
 
-    // Find and click login button
     const loginButtonSelector = await findSelector(page, [
       'button[type="submit"]',
       'button:has-text("Login")',
@@ -193,7 +118,6 @@ export async function scrapeCommissions({ email, password, headless = true, star
         page.click(loginButtonSelector),
       ]);
     } else {
-      // Try pressing Enter as fallback
       await Promise.all([
         page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }),
         page.keyboard.press('Enter'),
@@ -202,13 +126,9 @@ export async function scrapeCommissions({ email, password, headless = true, star
 
     // Step 4: Navigate to commissions page
     console.log('📊 Navigating to commissions page...');
-
-    // Wait for dashboard to load after login
     await sleep(2000);
 
-    // Try clicking the Commissions link in the nav menu
     const commissionsLinkClicked = await page.evaluate(() => {
-      // Look for a link containing "Commissions" text
       const links = Array.from(document.querySelectorAll('a'));
       const commissionsLink = links.find(a => a.textContent.trim() === 'Commissions');
       if (commissionsLink) {
@@ -230,7 +150,6 @@ export async function scrapeCommissions({ email, password, headless = true, star
     console.log('⏳ Waiting for page data to load...');
     await sleep(5000);
 
-    // Log current URL
     console.log(`   Current URL: ${page.url()}`);
 
     // Try scrolling to trigger lazy loading
@@ -251,12 +170,6 @@ export async function scrapeCommissions({ email, password, headless = true, star
     if (apiResponses.length > 0) {
       console.log('✅ Using intercepted API data');
       commissions = extractFromApiResponses(apiResponses);
-
-      // Debug: log first raw record's fields
-      if (commissions.length > 0 && process.env.DEBUG) {
-        console.log('\n📋 Raw API record fields:', Object.keys(commissions[0]).join(', '));
-        console.log('📋 Sample raw record:', JSON.stringify(commissions[0], null, 2));
-      }
     }
 
     // Get auth token from localStorage if not captured from response
@@ -282,27 +195,10 @@ export async function scrapeCommissions({ email, password, headless = true, star
       commissions = await extractFromDOM(page);
 
       if (commissions.length === 0) {
-        // Take a screenshot and dump page info for debugging
         console.log('⚠️ No data found. Taking debug screenshot...');
         await page.screenshot({ path: 'debug-commissions-page.png', fullPage: true });
-
-        // Log page URL and title
         console.log(`   Current URL: ${page.url()}`);
         console.log(`   Page title: ${await page.title()}`);
-
-        // Check what elements exist on the page
-        const pageInfo = await page.evaluate(() => {
-          const tables = document.querySelectorAll('table');
-          const divWithData = document.querySelectorAll('[class*="table"], [class*="data"], [class*="list"], [class*="grid"]');
-          return {
-            tableCount: tables.length,
-            dataElements: divWithData.length,
-            bodyText: document.body.innerText.slice(0, 500),
-          };
-        });
-        console.log(`   Tables found: ${pageInfo.tableCount}`);
-        console.log(`   Data-like elements: ${pageInfo.dataElements}`);
-        console.log(`   Page text preview: ${pageInfo.bodyText.slice(0, 200)}...`);
       }
     }
 
@@ -312,12 +208,9 @@ export async function scrapeCommissions({ email, password, headless = true, star
 
   } catch (error) {
     console.error('❌ Scraping failed:', error.message);
-
-    // Take a screenshot for debugging
     const screenshotPath = `error-screenshot-${Date.now()}.png`;
     await page.screenshot({ path: screenshotPath, fullPage: true });
     console.log(`📸 Error screenshot saved to: ${screenshotPath}`);
-
     throw error;
   } finally {
     await browser.close();
@@ -326,15 +219,6 @@ export async function scrapeCommissions({ email, password, headless = true, star
 
 /**
  * Fetches all commission records by paginating through the API
- * Extracts cookies from browser and makes requests from Node.js to avoid CORS
- *
- * API params:
- * - page: page number
- * - paginate: items per page
- * - sort_direction: 'asc' or 'desc'
- * - sort_field: 'created_at', etc.
- * - start_date: Unix timestamp
- * - end_date: Unix timestamp
  */
 async function fetchAllCommissions(page, authToken) {
   const API_BASE = 'https://api.bixgrow.com/api/partner/conversions';
@@ -347,9 +231,7 @@ async function fetchAllCommissions(page, authToken) {
   const startDate = Math.floor(new Date('2020-01-01').getTime() / 1000);
   const endDate = Math.floor(Date.now() / 1000);
 
-  // Get cookies from the browser session
-  const cookies = await page.cookies();
-  const cookieString = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+  const cookieString = await getCookieString(page);
 
   if (authToken) {
     console.log('   🔑 Using auth token for API requests');
@@ -361,7 +243,6 @@ async function fetchAllCommissions(page, authToken) {
     try {
       const apiUrl = `${API_BASE}?page=${currentPage}&paginate=${perPage}&sort_direction=desc&sort_field=created_at&start_date=${startDate}&end_date=${endDate}`;
 
-      // Build headers with auth token if available
       const headers = {
         'Accept': 'application/json',
         'Cookie': cookieString,
@@ -372,9 +253,7 @@ async function fetchAllCommissions(page, authToken) {
         headers['Authorization'] = `Bearer ${authToken}`;
       }
 
-      // Make API request from Node.js
       const res = await fetch(apiUrl, { headers });
-
       const response = await res.json();
 
       if (response.status === 'Success' && response.data) {
@@ -385,7 +264,6 @@ async function fetchAllCommissions(page, authToken) {
           allRecords.push(...records);
         }
 
-        // Get pagination info
         lastPage = pageData.last_page || 1;
         const total = pageData.total || records.length;
 
@@ -407,37 +285,9 @@ async function fetchAllCommissions(page, authToken) {
 }
 
 /**
- * Finds the first matching selector from a list of possible selectors
- */
-async function findSelector(page, selectors) {
-  for (const selector of selectors) {
-    try {
-      const element = await page.$(selector);
-      if (element) {
-        return selector;
-      }
-    } catch (e) {
-      // Selector not found, try next
-    }
-  }
-  return null;
-}
-
-/**
  * Applies date filter on the commissions page
  */
 async function applyDateFilter(page, startDate, endDate) {
-  // Look for date picker elements
-  const datePickerSelectors = [
-    'input[type="date"]',
-    '.date-picker',
-    '.date-range-picker',
-    '[data-testid="date-picker"]',
-    'input[placeholder*="date" i]',
-  ];
-
-  // This will need to be customized based on BixGrow's actual UI
-  // For now, we'll try common patterns
   try {
     const dateInputs = await page.$$('input[type="date"], .date-input');
     if (dateInputs.length >= 2) {
@@ -448,7 +298,6 @@ async function applyDateFilter(page, startDate, endDate) {
         await dateInputs[1].type(endDate);
       }
 
-      // Look for apply/filter button
       const applyButton = await findSelector(page, [
         'button:has-text("Apply")',
         'button:has-text("Filter")',
@@ -474,13 +323,11 @@ function extractFromApiResponses(apiResponses) {
   const commissions = [];
 
   for (const { url, data, records } of apiResponses) {
-    // Use pre-extracted records if available
     if (records && Array.isArray(records)) {
       commissions.push(...records);
       continue;
     }
 
-    // Handle different possible API response structures
     const extracted = data.data?.data || data.data || data.commissions || data.conversions ||
                     data.transactions || data.records || data.items ||
                     (Array.isArray(data) ? data : []);
@@ -495,13 +342,11 @@ function extractFromApiResponses(apiResponses) {
 
 /**
  * Extracts commission data by parsing the DOM table
- * Fallback method when API interception doesn't capture data
  */
 async function extractFromDOM(page) {
   return await page.evaluate(() => {
     const commissions = [];
 
-    // Try to find the data table
     const table = document.querySelector('table, .data-table, .commissions-table, [role="table"]');
 
     if (!table) {
@@ -509,7 +354,6 @@ async function extractFromDOM(page) {
       return commissions;
     }
 
-    // Get headers
     const headerRow = table.querySelector('thead tr, tr:first-child');
     const headers = [];
     if (headerRow) {
@@ -518,7 +362,6 @@ async function extractFromDOM(page) {
       });
     }
 
-    // Get data rows
     const rows = table.querySelectorAll('tbody tr, tr:not(:first-child)');
 
     rows.forEach(row => {
@@ -540,40 +383,11 @@ async function extractFromDOM(page) {
 
 /**
  * Debug function to explore the page structure
- * Useful for understanding BixGrow's UI
  */
 export async function debugPageStructure({ email, password }) {
-  const executablePath = findSystemChrome();
-  if (executablePath) {
-    console.log(`🌐 Using system Chrome: ${executablePath}`);
-  }
+  const browser = await launchBrowser({ headless: false });
+  const page = await createStealthPage(browser);
 
-  const browser = await puppeteer.launch({
-    headless: false, // Always show browser for debugging
-    executablePath,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-blink-features=AutomationControlled',
-      '--disable-infobars',
-      '--window-size=1920,1080',
-    ],
-    defaultViewport: { width: 1920, height: 1080 },
-  });
-
-  const page = await browser.newPage();
-
-  // Set a realistic user agent
-  await page.setUserAgent(
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-  );
-
-  // Hide webdriver property
-  await page.evaluateOnNewDocument(() => {
-    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-  });
-
-  // Log all network requests
   page.on('response', async (response) => {
     const url = response.url();
     if (url.includes('/api/')) {
@@ -589,11 +403,8 @@ export async function debugPageStructure({ email, password }) {
 
   try {
     await page.goto(LOGIN_URL, { waitUntil: 'networkidle2', timeout: 60000 });
-
-    // Wait for manual inspection
     console.log('🔍 Browser opened for debugging. Press Ctrl+C to close.');
-    await new Promise(() => {}); // Keep browser open indefinitely
-
+    await new Promise(() => {});
   } catch (error) {
     console.error('Debug session error:', error);
   }

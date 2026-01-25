@@ -1,0 +1,15 @@
+# Dependencies
+node_modules/
+
+# Environment files
+.env
+.env.*
+
+# Credentials
+credentials.json
+**/credentials.json
+*.pem
+*.key
+
+# OS files
+.DS_Store

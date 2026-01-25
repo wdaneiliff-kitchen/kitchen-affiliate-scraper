@@ -1,10 +1,26 @@
 #!/usr/bin/env node
 
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
+import { dirname, resolve } from 'path';
+
+// Load .env from monorepo root
+const __dirname = dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: resolve(__dirname, '../../../.env') });
 import { scrapeCommissions, debugPageStructure } from './scraper.js';
-import { transformRecords, toSheetRows } from './transformer.js';
-import { uploadToSheets, validateAccess, getServiceAccountEmail, createSpreadsheet } from './sheets.js';
+import { createTransformer } from '@kitchen/shared/transformer';
+import { uploadToSheets, validateAccess, getServiceAccountEmail, createSpreadsheet } from '@kitchen/shared/sheets';
 import { writeFile } from 'fs/promises';
+import { FIELD_MAPPINGS, STATUS_MAPPINGS, ADVERTISER_ID, ADVERTISER_NAME, extractProductTitle } from './config.js';
+
+// Create BixGrow-specific transformer
+const transformer = createTransformer({
+  fieldMappings: FIELD_MAPPINGS,
+  statusMappings: STATUS_MAPPINGS,
+  advertiserId: ADVERTISER_ID,
+  advertiserName: ADVERTISER_NAME,
+  extractProductTitle,
+});
 
 /**
  * BixGrow Scraper - Main Entry Point
@@ -12,9 +28,9 @@ import { writeFile } from 'fs/promises';
  * Scrapes commission data from BixGrow affiliate dashboard and uploads to Google Sheets.
  *
  * Usage:
- *   npm start                    # Full scrape + transform + upload
- *   npm run scrape               # Scrape only (outputs to JSON file)
- *   node src/index.js --debug    # Debug mode (opens browser for inspection)
+ *   pnpm bixgrow                  # Full scrape + transform + upload
+ *   pnpm bixgrow:scrape           # Scrape only (outputs to JSON file)
+ *   node src/index.js --debug     # Debug mode (opens browser for inspection)
  *   node src/index.js --create-sheet  # Create a new Google Sheet with headers
  */
 
@@ -23,7 +39,6 @@ async function main() {
   console.log('  BixGrow Commission Scraper → Google Sheets');
   console.log('═══════════════════════════════════════════════════════════\n');
 
-  // Parse command line arguments
   const args = process.argv.slice(2);
   const scrapeOnly = args.includes('--scrape-only');
   const uploadOnly = args.includes('--upload-only');
@@ -31,11 +46,9 @@ async function main() {
   const createSheet = args.includes('--create-sheet');
   const headless = !args.includes('--visible');
 
-  // Validate environment variables
   const config = validateConfig({ scrapeOnly, uploadOnly, createSheet });
 
   try {
-    // Debug mode - open browser for manual inspection
     if (debugMode) {
       console.log('🔍 Debug mode - opening browser for inspection...\n');
       await debugPageStructure({
@@ -45,7 +58,6 @@ async function main() {
       return;
     }
 
-    // Create new spreadsheet
     if (createSheet) {
       const spreadsheetId = await createSpreadsheet({
         credentialsPath: config.credentialsPath,
@@ -61,7 +73,6 @@ async function main() {
       return;
     }
 
-    // Validate Google Sheets access (unless scrape-only)
     if (!scrapeOnly) {
       console.log('🔐 Validating Google Sheets access...');
       const hasAccess = await validateAccess({
@@ -79,7 +90,6 @@ async function main() {
 
     let records;
 
-    // Scrape data (unless upload-only)
     if (!uploadOnly) {
       console.log('📊 Scraping BixGrow commissions...\n');
 
@@ -93,12 +103,10 @@ async function main() {
 
       console.log(`\n📦 Raw records scraped: ${rawCommissions.length}`);
 
-      // Transform data
       console.log('🔄 Transforming data to target schema...');
-      records = transformRecords(rawCommissions);
+      records = transformer.transformRecords(rawCommissions);
       console.log(`✅ Transformed records: ${records.length}\n`);
 
-      // Save to JSON for debugging/backup
       const jsonPath = `commissions-${new Date().toISOString().slice(0, 10)}.json`;
       await writeFile(jsonPath, JSON.stringify(records, null, 2));
       console.log(`💾 Saved to: ${jsonPath}\n`);
@@ -108,15 +116,12 @@ async function main() {
         return;
       }
     } else {
-      // Upload-only mode - load from most recent JSON file
       console.log('📂 Upload-only mode - looking for recent JSON file...');
-      // For upload-only, user should specify a file or we could find the most recent
       console.log('⚠️  Upload-only mode requires implementing JSON file loading');
       console.log('    For now, run without --upload-only to scrape and upload together');
       process.exit(1);
     }
 
-    // Upload to Google Sheets
     console.log('📤 Uploading to Google Sheets...\n');
     const result = await uploadToSheets({
       spreadsheetId: config.spreadsheetId,
@@ -145,15 +150,12 @@ async function main() {
   }
 }
 
-/**
- * Validates required environment variables
- */
 function validateConfig({ scrapeOnly, uploadOnly, createSheet }) {
   const config = {
     email: process.env.BIXGROW_EMAIL,
     password: process.env.BIXGROW_PASSWORD,
     spreadsheetId: process.env.GOOGLE_SHEET_ID,
-    credentialsPath: process.env.GOOGLE_CREDENTIALS_PATH || './credentials.json',
+    credentialsPath: process.env.GOOGLE_CREDENTIALS_PATH || resolve(__dirname, '../../../credentials.json'),
     sheetName: process.env.SHEET_NAME || 'Commissions',
     startDate: process.env.START_DATE,
     endDate: process.env.END_DATE,
@@ -161,13 +163,11 @@ function validateConfig({ scrapeOnly, uploadOnly, createSheet }) {
 
   const missing = [];
 
-  // BixGrow credentials required for scraping
   if (!uploadOnly && !createSheet) {
     if (!config.email) missing.push('BIXGROW_EMAIL');
     if (!config.password) missing.push('BIXGROW_PASSWORD');
   }
 
-  // Google Sheets config required for uploading or creating sheet
   if (!scrapeOnly) {
     if (!config.spreadsheetId && !createSheet) missing.push('GOOGLE_SHEET_ID');
   }
@@ -183,6 +183,5 @@ function validateConfig({ scrapeOnly, uploadOnly, createSheet }) {
   return config;
 }
 
-// Run
 main();
 

@@ -1,0 +1,18 @@
+{
+  "name": "@kitchen/shared",
+  "version": "1.0.0",
+  "description": "Shared utilities for affiliate scrapers",
+  "main": "src/index.js",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.js",
+    "./transformer": "./src/transformer.js",
+    "./sheets": "./src/sheets.js",
+    "./scraper-base": "./src/scraper-base.js"
+  },
+  "dependencies": {
+    "googleapis": "^128.0.0",
+    "puppeteer": "^21.6.1"
+  }
+}
+
