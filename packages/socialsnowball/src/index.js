@@ -11,16 +11,20 @@ import { scrapePayouts, debugPageStructure } from './scraper.js';
 import { createTransformer } from '@kitchen/shared/transformer';
 import { uploadToSheets, validateAccess, getServiceAccountEmail, createSpreadsheet } from '@kitchen/shared/sheets';
 import { writeFile } from 'fs/promises';
-import { FIELD_MAPPINGS, STATUS_MAPPINGS, ADVERTISER_ID, ADVERTISER_NAME, extractProductTitle, extractCommissionAmount, extractSaleAmount } from './config.js';
+import { FIELD_MAPPINGS, STATUS_MAPPINGS, getAccount, ACCOUNT_NAMES, DEFAULT_ACCOUNT, extractProductTitle, extractCommissionAmount, extractSaleAmount, extractCurrency } from './config.js';
 
-// Create SocialSnowball-specific transformer
-const transformer = createTransformer({
-  fieldMappings: FIELD_MAPPINGS,
-  statusMappings: STATUS_MAPPINGS,
-  advertiserId: ADVERTISER_ID,
-  advertiserName: ADVERTISER_NAME,
-  extractProductTitle,
-});
+/**
+ * Creates a transformer for a specific account
+ */
+function createAccountTransformer(account) {
+  return createTransformer({
+    fieldMappings: FIELD_MAPPINGS,
+    statusMappings: STATUS_MAPPINGS,
+    advertiserId: account.advertiserId,
+    advertiserName: account.advertiserName,
+    extractProductTitle,
+  });
+}
 
 /**
  * SocialSnowball Scraper - Main Entry Point
@@ -28,25 +32,39 @@ const transformer = createTransformer({
  * Scrapes payout data from SocialSnowball affiliate dashboard and uploads to Google Sheets.
  *
  * Usage:
- *   pnpm socialsnowball               # Full scrape + transform + upload
- *   pnpm socialsnowball:scrape        # Scrape only (outputs to JSON file)
- *   node src/index.js --debug         # Debug mode (opens browser for inspection)
- *   node src/index.js --create-sheet  # Create a new Google Sheet with headers
+ *   node src/index.js --account=enhance --scrape-only   # Scrape Enhance Pickleball
+ *   node src/index.js --account=crbn --scrape-only      # Scrape CRBN
+ *   node src/index.js --account=friday --scrape-only    # Scrape Friday
+ *   node src/index.js --account=enhance                 # Scrape + upload
+ *   node src/index.js --debug                           # Debug mode
  */
 
 async function main() {
+  const args = process.argv.slice(2);
+
+  // Parse --account=name argument
+  const accountArg = args.find(a => a.startsWith('--account='));
+  const accountName = accountArg ? accountArg.split('=')[1] : DEFAULT_ACCOUNT;
+
+  const account = getAccount(accountName);
+  if (!account) {
+    console.error(`❌ Unknown account: ${accountName}`);
+    console.error(`   Available accounts: ${ACCOUNT_NAMES.join(', ')}`);
+    process.exit(1);
+  }
+
   console.log('═══════════════════════════════════════════════════════════');
-  console.log('  SocialSnowball Payout Scraper → Google Sheets');
+  console.log(`  SocialSnowball Payout Scraper → Google Sheets`);
+  console.log(`  Account: ${account.advertiserName}`);
   console.log('═══════════════════════════════════════════════════════════\n');
 
-  const args = process.argv.slice(2);
   const scrapeOnly = args.includes('--scrape-only');
   const uploadOnly = args.includes('--upload-only');
   const debugMode = args.includes('--debug');
   const createSheet = args.includes('--create-sheet');
   const headless = !args.includes('--visible');
 
-  const config = validateConfig({ scrapeOnly, uploadOnly, createSheet });
+  const config = validateConfig({ scrapeOnly, uploadOnly, createSheet, account });
 
   try {
     if (debugMode) {
@@ -91,11 +109,12 @@ async function main() {
     let records;
 
     if (!uploadOnly) {
-      console.log('📊 Scraping SocialSnowball payouts...\n');
+      console.log(`📊 Scraping SocialSnowball payouts for ${account.advertiserName}...\n`);
 
       const rawPayouts = await scrapePayouts({
         email: config.email,
         password: config.password,
+        merchantName: account.merchantName,
         headless,
       });
 
@@ -115,13 +134,15 @@ async function main() {
         // Flatten nested amount fields for the transformer
         _commission_amount: extractCommissionAmount(record),
         _sale_amount: extractSaleAmount(record),
+        _currency: extractCurrency(record),
       }));
 
       console.log('🔄 Transforming data to target schema...');
+      const transformer = createAccountTransformer(account);
       records = transformer.transformRecords(processedPayouts);
       console.log(`✅ Transformed records: ${records.length}\n`);
 
-      const jsonPath = `socialsnowball-payouts-${new Date().toISOString().slice(0, 10)}.json`;
+      const jsonPath = `socialsnowball-${accountName}-payouts-${new Date().toISOString().slice(0, 10)}.json`;
       await writeFile(jsonPath, JSON.stringify({ raw: rawPayouts, transformed: records }, null, 2));
       console.log(`💾 Saved to: ${jsonPath}\n`);
 
@@ -164,10 +185,10 @@ async function main() {
   }
 }
 
-function validateConfig({ scrapeOnly, uploadOnly, createSheet }) {
+function validateConfig({ scrapeOnly, uploadOnly, createSheet, account }) {
   const config = {
-    email: process.env.SOCIALSNOWBALL_EMAIL,
-    password: process.env.SOCIALSNOWBALL_PASSWORD,
+    email: account.email,
+    password: account.password,
     spreadsheetId: process.env.GOOGLE_SHEET_ID,
     credentialsPath: process.env.GOOGLE_CREDENTIALS_PATH || resolve(__dirname, '../../../credentials.json'),
     sheetName: process.env.SHEET_NAME || 'Commissions',
@@ -176,8 +197,8 @@ function validateConfig({ scrapeOnly, uploadOnly, createSheet }) {
   const missing = [];
 
   if (!uploadOnly && !createSheet) {
-    if (!config.email) missing.push('SOCIALSNOWBALL_EMAIL');
-    if (!config.password) missing.push('SOCIALSNOWBALL_PASSWORD');
+    if (!config.email) missing.push(`SOCIALSNOWBALL_${account.advertiserId.toUpperCase()}_EMAIL`);
+    if (!config.password) missing.push(`SOCIALSNOWBALL_${account.advertiserId.toUpperCase()}_PASSWORD`);
   }
 
   if (!scrapeOnly) {

@@ -24,8 +24,8 @@
 
 // Status value mappings to normalize different representations
 const STATUS_MAPPINGS = {
-  pending: ['pending', 'new', 'open', 'waiting', 'unconfirmed', 'unpaid', 'created'],
-  approved: ['approved', 'confirmed', 'validated', 'active', 'complete', 'completed', 'paid', 'due', 'ready', 'ready_for_payout'],
+  pending: ['pending', 'new', 'open', 'waiting', 'unconfirmed', 'created'],
+  approved: ['approved', 'confirmed', 'validated', 'active', 'complete', 'completed', 'paid', 'due', 'ready', 'ready_for_payout', 'unpaid'],
   declined: ['declined', 'rejected', 'cancelled', 'canceled', 'void', 'voided', 'refunded'],
 };
 

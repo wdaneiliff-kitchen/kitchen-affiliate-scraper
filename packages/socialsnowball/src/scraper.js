@@ -7,7 +7,6 @@ import {
   getCookieString,
   getAuthToken,
 } from '@kitchen/shared/scraper-base';
-import { MERCHANT_NAME } from './config.js';
 
 const LOGIN_URL = 'https://affiliates.socialsnowball.io/affiliate/login';
 const PAYOUTS_URL = 'https://affiliates.socialsnowball.io/affiliate/dashboard/payouts/unpaid?page=1';
@@ -19,10 +18,11 @@ const PAYOUTS_URL = 'https://affiliates.socialsnowball.io/affiliate/dashboard/pa
  * @param {Object} options - Scraper options
  * @param {string} options.email - SocialSnowball login email
  * @param {string} options.password - SocialSnowball login password
+ * @param {string} options.merchantName - Merchant name to select in dropdown
  * @param {boolean} [options.headless=true] - Run browser in headless mode
  * @returns {Promise<Array>} Array of payout/commission objects
  */
-export async function scrapePayouts({ email, password, headless = true }) {
+export async function scrapePayouts({ email, password, merchantName, headless = true }) {
   console.log('🚀 Starting SocialSnowball scraper...');
   console.log(`   Headless: ${headless}`);
 
@@ -70,10 +70,18 @@ export async function scrapePayouts({ email, password, headless = true }) {
       }
 
       // Capture responses that look like payout data
-      const payoutKeywords = ['payout', 'payable', 'commission', 'earning', 'affiliate'];
-      const isPayoutData = payoutKeywords.some(kw => url.toLowerCase().includes(kw));
+      // Prioritize specific payout endpoints, exclude notifications
+      const urlLower = url.toLowerCase();
+      const isPayoutEndpoint =
+        urlLower.includes('payouts/pending') ||
+        urlLower.includes('payouts/paid') ||
+        urlLower.includes('search-payables') ||
+        urlLower.includes('payables');
 
-      if (records && records.length > 0 && isPayoutData) {
+      // Exclude notification endpoints
+      const isExcluded = urlLower.includes('notification');
+
+      if (records && records.length > 0 && isPayoutEndpoint && !isExcluded) {
         console.log(`  └─ 💾 CAPTURED: ${records.length} records from ${url.split('?')[0]}`);
         apiResponses.push({ url, data, records });
       }
@@ -154,35 +162,35 @@ export async function scrapePayouts({ email, password, headless = true }) {
     });
 
     if (hasMerchantSelection) {
-      console.log(`🏪 Selecting merchant: ${MERCHANT_NAME}`);
+      console.log(`🏪 Selecting merchant: ${merchantName}`);
 
       // Click on the React Select control to open the dropdown
       await page.click('.selectpicker__control');
       await sleep(500);
 
       // Type the merchant name to filter/search
-      await page.type('.selectpicker__input', MERCHANT_NAME, { delay: 50 });
+      await page.type('.selectpicker__input', merchantName, { delay: 50 });
       await sleep(1000);
 
       // Press Enter to select the first matching option, or click the option
-      const optionSelected = await page.evaluate((merchantName) => {
+      const optionSelected = await page.evaluate((name) => {
         // Look for the option in the dropdown menu
         const options = document.querySelectorAll('.selectpicker__option, [class*="option"]');
         for (const option of options) {
-          if (option.textContent.toLowerCase().includes(merchantName.toLowerCase())) {
+          if (option.textContent.toLowerCase().includes(name.toLowerCase())) {
             option.click();
             return true;
           }
         }
         return false;
-      }, MERCHANT_NAME);
+      }, merchantName);
 
       if (!optionSelected) {
         // Fallback: press Enter to select first match
         await page.keyboard.press('Enter');
       }
 
-      console.log(`   ✅ Selected merchant: ${MERCHANT_NAME}`);
+      console.log(`   ✅ Selected merchant: ${merchantName}`);
       await sleep(1000);
 
       // Click the "Enter dashboard" button
