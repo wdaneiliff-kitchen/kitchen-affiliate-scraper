@@ -55,15 +55,19 @@ export const STATUS_MAPPINGS = {
 };
 
 // Field name mappings from SocialSnowball to target schema
-// Handles both Enhance (search-payables) and CRBN/Friday (payouts/pending) formats
+// Handles multiple API formats:
+// - Enhance: search-payables (uses source_item_external_created_at)
+// - CRBN/Friday pending: payouts/pending (uses date)
+// - CRBN/Friday paid: payouts/paid (uses order_date, payout_date)
 export const FIELD_MAPPINGS = {
   // Transaction ID
   transaction_id: ['id'],
 
   // Date fields - different APIs use different field names
-  order_date: ['source_item_external_created_at', 'date', 'created_at'],
+  // payouts/paid uses 'order_date' directly, others use different names
+  order_date: ['order_date', 'source_item_external_created_at', 'date', 'created_at'],
   click_date: [],
-  validation_date: [],
+  validation_date: ['payout_date'],  // Use payout_date as validation date for paid records
   modified_date: [],
 
   // Currency - extracted from nested objects in pre-processing
@@ -74,7 +78,8 @@ export const FIELD_MAPPINGS = {
   commission_amount: ['_commission_amount'],
 
   // Status - different APIs use different field names
-  status: ['status', 'payout_status'],
+  // For paid endpoint, we'll set this in pre-processing
+  status: ['_status', 'status', 'payout_status'],
 
   // Sub IDs / tracking
   sub_id_1: ['source_item_attribution_value'],  // Discount code e.g. "KITCHEN"
@@ -102,40 +107,42 @@ export function extractProductTitle(record) {
 
 /**
  * Extract commission amount from nested fields
+ * Returns dollar value (NOT cents) - transformer will convert
  * Handles two formats:
- * - Enhance: amount.value (cents as string, e.g., "464970")
+ * - Enhance: amount.value (cents as string, e.g., "464970") - convert to dollars
  * - CRBN/Friday: commission.raw (dollars as number, e.g., 8.55)
  */
 export function extractCommissionAmount(record) {
-  // Enhance format: amount.value in cents
+  // Enhance format: amount.value in cents - convert to dollars for transformer
   if (record.amount?.value) {
-    return parseInt(record.amount.value, 10);
+    return parseInt(record.amount.value, 10) / 100;
   }
-  // CRBN/Friday format: commission.raw in dollars
+  // CRBN/Friday format: commission.raw already in dollars
   if (record.commission?.raw !== undefined) {
-    return Math.round(record.commission.raw * 100);  // Convert dollars to cents
+    return record.commission.raw;
   }
   return 0;
 }
 
 /**
  * Extract sale amount from nested fields
+ * Returns dollar value (NOT cents) - transformer will convert
  * Handles two formats:
- * - Enhance: associated_revenue.value (cents as string)
+ * - Enhance: associated_revenue.value (cents as string) - convert to dollars
  * - CRBN/Friday: referred_revenue.raw (dollars as number)
  */
 export function extractSaleAmount(record) {
-  // Enhance format: associated_revenue.value in cents
+  // Enhance format: associated_revenue.value in cents - convert to dollars for transformer
   if (record.associated_revenue?.value) {
-    return parseInt(record.associated_revenue.value, 10);
+    return parseInt(record.associated_revenue.value, 10) / 100;
   }
-  // Fallback to commission base
+  // Fallback to commission base (also in cents)
   if (record.associated_commission_base?.value) {
-    return parseInt(record.associated_commission_base.value, 10);
+    return parseInt(record.associated_commission_base.value, 10) / 100;
   }
-  // CRBN/Friday format: referred_revenue.raw in dollars
+  // CRBN/Friday format: referred_revenue.raw already in dollars
   if (record.referred_revenue?.raw !== undefined) {
-    return Math.round(record.referred_revenue.raw * 100);  // Convert dollars to cents
+    return record.referred_revenue.raw;
   }
   return 0;
 }

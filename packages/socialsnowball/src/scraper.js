@@ -81,7 +81,8 @@ export async function scrapePayouts({ email, password, merchantName, headless = 
       // Exclude notification endpoints
       const isExcluded = urlLower.includes('notification');
 
-      if (records && records.length > 0 && isPayoutEndpoint && !isExcluded) {
+      // Capture payout endpoint responses (even empty ones - means no pending payouts)
+      if (records && isPayoutEndpoint && !isExcluded) {
         console.log(`  └─ 💾 CAPTURED: ${records.length} records from ${url.split('?')[0]}`);
         apiResponses.push({ url, data, records });
       }
@@ -239,19 +240,42 @@ export async function scrapePayouts({ email, password, merchantName, headless = 
       await page.goto(PAYOUTS_URL, { waitUntil: 'networkidle2', timeout: 60000 });
     }
 
-    // Wait for the page to load data
-    console.log('⏳ Waiting for page data to load...');
+    // Wait for the page to load data (Unpaid tab loads by default)
+    console.log('⏳ Waiting for Unpaid tab data to load...');
     await sleep(5000);
 
     console.log(`   Current URL: ${page.url()}`);
 
-    // Take a screenshot to debug the page structure
-    await page.screenshot({ path: 'socialsnowball-payouts-page.png', fullPage: true });
-    console.log('   📸 Saved debug screenshot: socialsnowball-payouts-page.png');
-
     // Try scrolling to trigger lazy loading
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
     await sleep(2000);
+
+    // Now click on the "Paid" tab to also capture paid payouts
+    console.log('📊 Clicking on Paid tab to capture paid payouts...');
+    const paidTabClicked = await page.evaluate(() => {
+      // Look for the Paid tab/link
+      const tabs = Array.from(document.querySelectorAll('a, button, [role="tab"]'));
+      const paidTab = tabs.find(el => {
+        const text = el.textContent.trim().toLowerCase();
+        return text === 'paid' || text.includes('paid payout');
+      });
+      if (paidTab) {
+        paidTab.click();
+        return true;
+      }
+      return false;
+    });
+
+    if (paidTabClicked) {
+      console.log('   ✅ Clicked Paid tab');
+      await sleep(5000); // Wait for paid data to load
+    } else {
+      console.log('   ⚠️ Could not find Paid tab');
+    }
+
+    // Take a screenshot to debug the page structure
+    await page.screenshot({ path: 'socialsnowball-payouts-page.png', fullPage: true });
+    console.log('   📸 Saved debug screenshot: socialsnowball-payouts-page.png');
 
     // Step 5: Extract data
     let payouts = [];
@@ -285,9 +309,10 @@ export async function scrapePayouts({ email, password, merchantName, headless = 
       }
     }
 
-    // Fall back to DOM parsing if no API data
-    if (payouts.length === 0) {
-      console.log('📄 Trying DOM parsing...');
+    // Fall back to DOM parsing ONLY if we didn't get any API response
+    // (If API returned empty array, that's valid - no pending payouts)
+    if (payouts.length === 0 && apiResponses.length === 0) {
+      console.log('📄 Trying DOM parsing (no API data captured)...');
       payouts = await extractFromDOM(page);
 
       if (payouts.length === 0) {
@@ -309,6 +334,8 @@ export async function scrapePayouts({ email, password, merchantName, headless = 
         console.log(`   Data-like elements: ${pageInfo.dataElements}`);
         console.log(`   Page text preview:\n${pageInfo.bodyText.slice(0, 500)}...`);
       }
+    } else if (payouts.length === 0 && apiResponses.length > 0) {
+      console.log('ℹ️  API returned 0 records - no pending payouts for this account');
     }
 
     console.log(`\n✅ Scraped ${payouts.length} payout records`);
@@ -401,13 +428,37 @@ async function fetchAllPayouts(page, authToken, capturedResponses) {
 
 /**
  * Extracts payout data from intercepted API responses
+ * - Tags records from paid endpoint with _status: 'paid'
+ * - Flattens grouped payouts into individual order records
  */
 function extractFromApiResponses(apiResponses) {
   const payouts = [];
 
-  for (const { records } of apiResponses) {
+  for (const { url, records } of apiResponses) {
     if (records && Array.isArray(records)) {
-      payouts.push(...records);
+      // Check if this is from the paid endpoint
+      const isPaidEndpoint = url.toLowerCase().includes('payouts/paid');
+
+      for (const record of records) {
+        // Check if this is a grouped payout with individual orders
+        if (record.is_grouped && record.group && Array.isArray(record.group) && record.group.length > 0) {
+          // Flatten: extract each individual order from the group
+          console.log(`  └─ 📦 Flattening grouped payout: ${record.group.length} individual orders`);
+          for (const order of record.group) {
+            payouts.push({
+              ...order,
+              _status: isPaidEndpoint ? 'paid' : order.status || order.payout_status,
+              _parent_payout_date: record.payout_date,  // Keep reference to parent payout date
+            });
+          }
+        } else {
+          // Regular non-grouped record
+          payouts.push({
+            ...record,
+            _status: isPaidEndpoint ? 'paid' : record.status || record.payout_status,
+          });
+        }
+      }
     }
   }
 
