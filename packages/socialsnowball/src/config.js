@@ -109,13 +109,13 @@ export function extractProductTitle(record) {
  * Extract commission amount from nested fields
  * Returns dollar value (NOT cents) - transformer will convert
  * Handles two formats:
- * - Enhance: amount.value (cents as string, e.g., "464970") - convert to dollars
+ * - Enhance: amount.value in HUNDREDTHS of cents (e.g., "464970" = $46.497)
  * - CRBN/Friday: commission.raw (dollars as number, e.g., 8.55)
  */
 export function extractCommissionAmount(record) {
-  // Enhance format: amount.value in cents - convert to dollars for transformer
+  // Enhance format: amount.value in hundredths of cents - divide by 10000 to get dollars
   if (record.amount?.value) {
-    return parseInt(record.amount.value, 10) / 100;
+    return parseInt(record.amount.value, 10) / 10000;
   }
   // CRBN/Friday format: commission.raw already in dollars
   if (record.commission?.raw !== undefined) {
@@ -128,17 +128,17 @@ export function extractCommissionAmount(record) {
  * Extract sale amount from nested fields
  * Returns dollar value (NOT cents) - transformer will convert
  * Handles two formats:
- * - Enhance: associated_revenue.value (cents as string) - convert to dollars
+ * - Enhance: associated_revenue.value in HUNDREDTHS of cents (e.g., "1549900" = $154.99)
  * - CRBN/Friday: referred_revenue.raw (dollars as number)
  */
 export function extractSaleAmount(record) {
-  // Enhance format: associated_revenue.value in cents - convert to dollars for transformer
+  // Enhance format: associated_revenue.value in hundredths of cents - divide by 10000 to get dollars
   if (record.associated_revenue?.value) {
-    return parseInt(record.associated_revenue.value, 10) / 100;
+    return parseInt(record.associated_revenue.value, 10) / 10000;
   }
-  // Fallback to commission base (also in cents)
+  // Fallback to commission base (also in hundredths of cents)
   if (record.associated_commission_base?.value) {
-    return parseInt(record.associated_commission_base.value, 10) / 100;
+    return parseInt(record.associated_commission_base.value, 10) / 10000;
   }
   // CRBN/Friday format: referred_revenue.raw already in dollars
   if (record.referred_revenue?.raw !== undefined) {

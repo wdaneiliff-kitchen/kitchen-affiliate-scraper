@@ -301,11 +301,12 @@ export async function scrapePayouts({ email, password, merchantName, headless = 
     }
 
     // Try to fetch more data via pagination if we have an auth token
+    // Pass the already-flattened payouts so we don't lose individual records
     if (authToken || apiResponses.length > 0) {
       console.log('\n📄 Attempting to fetch all pages...');
-      const allPayouts = await fetchAllPayouts(page, authToken, apiResponses);
-      if (allPayouts.length > 0) {
-        payouts = allPayouts;
+      const additionalPayouts = await fetchAllPayouts(page, authToken, apiResponses, payouts);
+      if (additionalPayouts.length > payouts.length) {
+        payouts = additionalPayouts;
       }
     }
 
@@ -356,14 +357,16 @@ export async function scrapePayouts({ email, password, merchantName, headless = 
 /**
  * Attempts to fetch all payout records by paginating through the API
  * This is a discovery function - it will try to find the API endpoint pattern
+ * @param {Array} existingPayouts - Already-processed (flattened) payouts to start with
  */
-async function fetchAllPayouts(page, authToken, capturedResponses) {
-  const allRecords = [];
+async function fetchAllPayouts(page, authToken, capturedResponses, existingPayouts = []) {
+  // Start with already-flattened payouts (preserves individual records from grouped payouts)
+  const allRecords = [...existingPayouts];
 
-  // If we captured API responses, try to determine the endpoint pattern
+  // If we captured API responses, try pagination
   if (capturedResponses.length > 0) {
+    // Use the first response for pagination pattern detection
     const { url, records } = capturedResponses[0];
-    allRecords.push(...records);
 
     // Try to extract the base API URL and pagination pattern
     const baseUrl = url.split('?')[0];
