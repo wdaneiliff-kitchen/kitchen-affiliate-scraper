@@ -26,6 +26,15 @@ importers:
         specifier: ^21.6.1
         version: 21.11.0
 
+  packages/shortly:
+    dependencies:
+      '@kitchen/shared':
+        specifier: workspace:*
+        version: link:../shared
+      dotenv:
+        specifier: ^16.3.1
+        version: 16.6.1
+
   packages/socialsnowball:
     dependencies:
       '@kitchen/shared':
