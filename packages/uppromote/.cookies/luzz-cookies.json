@@ -1,0 +1,32 @@
+[
+  {
+    "name": "laravel_session",
+    "value": "eyJpdiI6ImcyREhobVpKSmh2dVFyREoxV2tBUUE9PSIsInZhbHVlIjoiV2JwUkRlejEzQTgxVkYzbGk2YjZKck81RG56M01acTdRM3krS0lEaGFQbHZHVjl3QkFMNkNJQk1UQkZ2VmUrRFBhVUd0OVpRNUx5MW1PSlBOd1ROXC80bUpZdUF6NHM4TGFWNFhGQjZRYjZ2eDRvODhwUHZ5Z2F1SHJ0Zm5ialVNIiwibWFjIjoiZjZhYjczMzUwNDZjOWY5MzRkYjgyODQ2M2Y1NTQzMmQ5ZjRhNDRlNjY2Zjk4MDI2ZTM2ZTQ2N2VmNmMyZGUwZiJ9",
+    "domain": "af.uppromote.com",
+    "path": "/",
+    "expires": 1770617526.830583,
+    "size": 343,
+    "httpOnly": true,
+    "secure": true,
+    "session": false,
+    "sameSite": "None",
+    "sameParty": false,
+    "sourceScheme": "Secure",
+    "sourcePort": 443
+  },
+  {
+    "name": "XSRF-TOKEN",
+    "value": "eyJpdiI6Ik5mVzZVZWhOTjFMR3Zyd1FaNjNSblE9PSIsInZhbHVlIjoiUzh4OWV1RUlnR1k3dzk5N1hBNHVFRndoamRjRTRDQjN3Z0FQZllRc1RPOFNTeEVXeHhQdUk5Q1UxNHBtZEVxZCIsIm1hYyI6ImU4YmFiMGUwYmFkYTIwMTY2NDNlNmNiZmFiOWJlMDFmMjRjOGEzOGEyMGFkNzc2ZTEwZjEyN2VlNzk0ZmM3ZjMifQ%3D%3D",
+    "domain": "af.uppromote.com",
+    "path": "/",
+    "expires": 1770617526.830564,
+    "size": 258,
+    "httpOnly": false,
+    "secure": true,
+    "session": false,
+    "sameSite": "None",
+    "sameParty": false,
+    "sourceScheme": "Secure",
+    "sourcePort": 443
+  }
+]

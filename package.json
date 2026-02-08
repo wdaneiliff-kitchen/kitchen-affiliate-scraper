@@ -6,7 +6,14 @@
     "bixgrow": "pnpm --filter @kitchen/bixgrow start",
     "bixgrow:scrape": "pnpm --filter @kitchen/bixgrow scrape",
     "socialsnowball": "pnpm --filter @kitchen/socialsnowball start",
-    "socialsnowball:scrape": "pnpm --filter @kitchen/socialsnowball scrape"
+    "socialsnowball:scrape": "pnpm --filter @kitchen/socialsnowball scrape",
+    "socialsnowball:all": "pnpm --filter @kitchen/socialsnowball start -- --account=all",
+    "socialsnowball:all:scrape": "pnpm --filter @kitchen/socialsnowball scrape -- --account=all",
+    "uppromote": "pnpm --filter @kitchen/uppromote start",
+    "uppromote:scrape": "pnpm --filter @kitchen/uppromote scrape",
+    "uppromote:all": "pnpm --filter @kitchen/uppromote start -- --account=all",
+    "uppromote:all:scrape": "pnpm --filter @kitchen/uppromote scrape -- --account=all",
+    "shortly": "pnpm --filter @kitchen/shortly start"
   },
   "packageManager": "pnpm@9.14.2"
 }
