@@ -13,3 +13,6 @@ credentials.json
 
 # OS files
 .DS_Store
+
+# Exported payouts and commissions (date-stamped JSON, e.g. *-2026-01-30.json)
+**/*-????-??-??.json
