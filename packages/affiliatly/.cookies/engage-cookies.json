@@ -1,0 +1,46 @@
+[
+  {
+    "name": "_pk_id.1.f9ff",
+    "value": "95ec745aab46ab2b.1770609305.",
+    "domain": "www.affiliatly.com",
+    "path": "/",
+    "expires": 1804564505,
+    "size": 41,
+    "httpOnly": false,
+    "secure": false,
+    "session": false,
+    "sameSite": "Lax",
+    "sameParty": false,
+    "sourceScheme": "Secure",
+    "sourcePort": 443
+  },
+  {
+    "name": "_pk_ses.1.f9ff",
+    "value": "1",
+    "domain": "www.affiliatly.com",
+    "path": "/",
+    "expires": 1770611200,
+    "size": 15,
+    "httpOnly": false,
+    "secure": false,
+    "session": false,
+    "sameSite": "Lax",
+    "sameParty": false,
+    "sourceScheme": "Secure",
+    "sourcePort": 443
+  },
+  {
+    "name": "PHPSESSID",
+    "value": "j6hpsrj5h80kjhbmc7i7207md4",
+    "domain": "www.affiliatly.com",
+    "path": "/",
+    "expires": -1,
+    "size": 35,
+    "httpOnly": true,
+    "secure": true,
+    "session": true,
+    "sameParty": false,
+    "sourceScheme": "Secure",
+    "sourcePort": 443
+  }
+]

@@ -1,6 +1,6 @@
 import { google } from 'googleapis';
 import { readFile } from 'fs/promises';
-import { getHeaders } from './transformer.js';
+import { getHeaders, filterValidCommissionRecords } from './transformer.js';
 
 /**
  * Google Sheets upload module using service account authentication.
@@ -44,7 +44,13 @@ export async function uploadToSheets({
   clearFirst = false,
   dedupeByTransactionId = true,
 }) {
-  console.log(`📤 Uploading ${records.length} records to Google Sheets...`);
+  // Only upload valid commission records (order_date + non-zero sale or commission)
+  const validRecords = filterValidCommissionRecords(records);
+  const invalidCount = records.length - validRecords.length;
+  if (invalidCount > 0) {
+    console.log(`⚠️ Skipping ${invalidCount} invalid records (missing order_date or zero amounts)`);
+  }
+  console.log(`📤 Uploading ${validRecords.length} records to Google Sheets...`);
 
   const sheets = await getAuthenticatedClient(credentialsPath);
   const range = `${sheetName}!A:V`; // Columns A through V (22 columns)
@@ -87,11 +93,11 @@ export async function uploadToSheets({
     }
 
     // Filter out duplicates
-    let recordsToUpload = records;
+    let recordsToUpload = validRecords;
     let skippedCount = 0;
 
     if (dedupeByTransactionId && existingTransactionIds.size > 0) {
-      recordsToUpload = records.filter(record => {
+      recordsToUpload = validRecords.filter(record => {
         if (existingTransactionIds.has(String(record.transaction_id))) {
           skippedCount++;
           return false;
@@ -111,6 +117,7 @@ export async function uploadToSheets({
         uploaded: 0,
         skipped: skippedCount,
         total: records.length,
+        invalid: invalidCount,
       };
     }
 
@@ -147,6 +154,7 @@ export async function uploadToSheets({
       uploaded: recordsToUpload.length,
       skipped: skippedCount,
       total: records.length,
+      invalid: invalidCount,
       updatedRange: result.data.updatedRange,
     };
 

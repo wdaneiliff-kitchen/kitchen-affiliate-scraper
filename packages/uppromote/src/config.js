@@ -5,6 +5,7 @@
  * - Luzz
  * - Honolulu
  * - Holbrook
+ * - Diadem
  *
  * Each brand has its own UpPromote shop URL and credentials.
  */
@@ -39,11 +40,18 @@ export function getAccount(name) {
       advertiserId: 'holbrook',
       advertiserName: 'Holbrook',
     },
+    diadem: {
+      email: process.env.UPPROMOTE_DIADEM_EMAIL,
+      password: process.env.UPPROMOTE_DIADEM_PASSWORD,
+      baseUrl: process.env.UPPROMOTE_DIADEM_BASE_URL,
+      advertiserId: 'diadem',
+      advertiserName: 'Diadem',
+    },
   };
   return accounts[name];
 }
 
-export const ACCOUNT_NAMES = ['luzz', 'honolulu', 'holbrook'];
+export const ACCOUNT_NAMES = ['luzz', 'honolulu', 'holbrook', 'diadem'];
 
 // Default account
 export const DEFAULT_ACCOUNT = 'luzz';

@@ -115,7 +115,7 @@ export function createTransformer(config) {
       sub_id_6: String(findField(raw, fieldMappings.sub_id_6) || ''),
       decline_reason: findField(raw, fieldMappings.decline_reason) || '',
       paid_to_publisher: normalizePaidStatus(findField(raw, fieldMappings.paid_to_publisher)),
-      clickout_url: findField(raw, fieldMappings.clickout_url) || '',
+      clickout_url: sanitizeUrl(findField(raw, fieldMappings.clickout_url)),
       product_title: extractProductTitle ? extractProductTitle(raw) : (findField(raw, fieldMappings.product_title) || ''),
       order_ref: String(findField(raw, fieldMappings.order_ref) || ''),
     };
@@ -169,27 +169,60 @@ function generateTransactionId(record) {
 }
 
 /**
- * Formats a date to Y-m-d H:i:s UTC format
+ * Formats a date to Y-m-d H:i:s UTC format.
+ * Handles relative time prefixes from scraped pages (e.g., "14 hours agoFeb 7, 2026 8:20 PM").
  */
 export function formatDateUTC(dateValue) {
   if (!dateValue) return '';
 
   try {
-    const date = new Date(dateValue);
-    if (isNaN(date.getTime())) return '';
+    const str = String(dateValue).trim();
 
-    const year = date.getUTCFullYear();
-    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-    const day = String(date.getUTCDate()).padStart(2, '0');
-    const hours = String(date.getUTCHours()).padStart(2, '0');
-    const minutes = String(date.getUTCMinutes()).padStart(2, '0');
-    const seconds = String(date.getUTCSeconds()).padStart(2, '0');
+    // Try direct parse first
+    let date = new Date(str);
+    if (!isNaN(date.getTime())) {
+      return formatDateComponents(date);
+    }
 
-    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+    // Handle relative time prefix (e.g., "14 hours agoFeb 7, 2026 8:20 PM")
+    const agoIndex = str.lastIndexOf('ago');
+    if (agoIndex !== -1) {
+      const afterAgo = str.slice(agoIndex + 3).trim();
+      date = new Date(afterAgo);
+      if (!isNaN(date.getTime())) {
+        return formatDateComponents(date);
+      }
+    }
+
+    // Try extracting a month-based date pattern (e.g., "Feb 7, 2026 8:20 PM")
+    const monthPattern = /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},?\s+\d{4}[\s\d:APMapm]*/i;
+    const monthMatch = str.match(monthPattern);
+    if (monthMatch) {
+      date = new Date(monthMatch[0].trim());
+      if (!isNaN(date.getTime())) {
+        return formatDateComponents(date);
+      }
+    }
+
+    return '';
   } catch (e) {
     console.warn('Failed to parse date:', dateValue);
     return '';
   }
+}
+
+/**
+ * Formats a Date object to Y-m-d H:i:s UTC string
+ */
+function formatDateComponents(date) {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  const hours = String(date.getUTCHours()).padStart(2, '0');
+  const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+  const seconds = String(date.getUTCSeconds()).padStart(2, '0');
+
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 }
 
 /**
@@ -246,6 +279,27 @@ export function normalizeCurrency(currency) {
 }
 
 /**
+ * Validates and sanitizes a URL value.
+ * Returns empty string for values that aren't valid URLs (e.g., "s", random strings).
+ */
+function sanitizeUrl(value) {
+  if (!value || typeof value !== 'string') return '';
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol === 'http:' || url.protocol === 'https:') {
+      return trimmed;
+    }
+  } catch {
+    // Not a valid URL
+  }
+
+  return '';
+}
+
+/**
  * Normalizes paid to publisher status to '1' or '0'
  */
 export function normalizePaidStatus(value) {
@@ -255,6 +309,35 @@ export function normalizePaidStatus(value) {
   return truthyValues.includes(value) || truthyValues.includes(String(value).toLowerCase())
     ? '1'
     : '0';
+}
+
+/**
+ * Returns true if a transformed record is a valid commission (has order date and non-zero money).
+ * Used to avoid uploading scraped noise (e.g. settings tables) or placeholder rows.
+ *
+ * @param {Object} record - Transformed record with order_date, sale_amount, commission_amount
+ * @returns {boolean}
+ */
+export function isValidCommissionRecord(record) {
+  if (!record || typeof record !== 'object') return false;
+  const orderDate = record.order_date;
+  const hasDate = typeof orderDate === 'string' && orderDate.trim().length > 0;
+  const sale = Number(record.sale_amount);
+  const commission = Number(record.commission_amount);
+  const hasMoney = (typeof sale === 'number' && !isNaN(sale) && sale > 0) ||
+    (typeof commission === 'number' && !isNaN(commission) && commission > 0);
+  return hasDate && hasMoney;
+}
+
+/**
+ * Filters an array of transformed records to only valid commission records.
+ *
+ * @param {Array<Object>} records - Transformed records
+ * @returns {Array<Object>} Records that pass isValidCommissionRecord
+ */
+export function filterValidCommissionRecords(records) {
+  if (!Array.isArray(records)) return [];
+  return records.filter(isValidCommissionRecord);
 }
 
 /**
