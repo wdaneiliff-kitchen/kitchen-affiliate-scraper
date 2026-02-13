@@ -6,6 +6,7 @@
  * - Honolulu
  * - Holbrook
  * - Diadem
+ * - Pickleball Apes
  *
  * Each brand has its own UpPromote shop URL and credentials.
  */
@@ -47,11 +48,18 @@ export function getAccount(name) {
       advertiserId: 'diadem',
       advertiserName: 'Diadem',
     },
+    pickleballapes: {
+      email: process.env.UPPROMOTE_PICKLEBALLAPES_EMAIL,
+      password: process.env.UPPROMOTE_PICKLEBALLAPES_PASSWORD,
+      baseUrl: process.env.UPPROMOTE_PICKLEBALLAPES_BASE_URL,
+      advertiserId: 'pickleballapes',
+      advertiserName: 'Pickleball Apes',
+    },
   };
   return accounts[name];
 }
 
-export const ACCOUNT_NAMES = ['luzz', 'honolulu', 'holbrook', 'diadem'];
+export const ACCOUNT_NAMES = ['luzz', 'honolulu', 'holbrook', 'diadem', 'pickleballapes'];
 
 // Default account
 export const DEFAULT_ACCOUNT = 'luzz';

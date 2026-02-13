@@ -7,6 +7,8 @@ Scrapes commission/transaction data from UpPromote affiliate dashboard and uploa
 - **Luzz** (default) - Pickleball paddles
 - **Honolulu**
 - **Holbrook**
+- **Diadem**
+- **Pickleball Apes**
 
 ### Quick start: LUZZ
 
@@ -81,6 +83,16 @@ UPPROMOTE_HOLBROOK_EMAIL=your-email@example.com
 UPPROMOTE_HOLBROOK_PASSWORD=your-password
 UPPROMOTE_HOLBROOK_BASE_URL=https://af.uppromote.com/holbrook-shop-id
 
+# UpPromote - Diadem
+UPPROMOTE_DIADEM_EMAIL=your-email@example.com
+UPPROMOTE_DIADEM_PASSWORD=your-password
+UPPROMOTE_DIADEM_BASE_URL=https://af.uppromote.com/diadem-shop-id
+
+# UpPromote - Pickleball Apes
+UPPROMOTE_PICKLEBALLAPES_EMAIL=your-email@example.com
+UPPROMOTE_PICKLEBALLAPES_PASSWORD=your-password
+UPPROMOTE_PICKLEBALLAPES_BASE_URL=https://af.uppromote.com/pickleballapes
+
 # Google Sheets
 GOOGLE_SHEET_ID=your-spreadsheet-id
 ```
@@ -106,6 +118,8 @@ pnpm uppromote                           # Default (Luzz)
 pnpm uppromote -- --account=luzz
 pnpm uppromote -- --account=honolulu
 pnpm uppromote -- --account=holbrook
+pnpm uppromote -- --account=diadem
+pnpm uppromote -- --account=pickleballapes
 
 # Scrape + upload ALL brands
 pnpm uppromote:all
@@ -125,6 +139,8 @@ cd packages/uppromote
 node src/index.js --account=luzz
 node src/index.js --account=honolulu
 node src/index.js --account=holbrook
+node src/index.js --account=diadem
+node src/index.js --account=pickleballapes
 
 # All accounts
 node src/index.js --account=all
@@ -154,7 +170,7 @@ node src/index.js --create-sheet
 | Column | Required | Format | Description |
 |--------|----------|--------|-------------|
 | transaction_id | Yes | Integer | Unique UpPromote referral ID |
-| advertiser_id | Yes | String | Brand slug (luzz, honolulu, holbrook) |
+| advertiser_id | Yes | String | Brand slug (luzz, honolulu, holbrook, diadem, pickleballapes) |
 | advertiser_name | Yes | String | Brand display name |
 | order_date | Yes | Y-m-d H:i:s | Order creation timestamp |
 | currency_id | Yes | ISO 4217 | 3-letter code (USD, EUR, etc.) |
