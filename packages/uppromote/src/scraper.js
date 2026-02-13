@@ -223,11 +223,13 @@ export async function scrapeCommissions({
                document.body.innerText.includes("I'm not a robot");
       });
 
+      let captchaSolveAttempts = 0;
       if (hasCaptcha) {
         // Try 2captcha if API key provided
         if (twoCaptchaKey) {
           console.log('\n🤖 reCAPTCHA detected - attempting auto-solve with 2captcha...');
           const solved = await solve2Captcha(page, twoCaptchaKey);
+          captchaSolveAttempts++;
           if (!solved) {
             console.log('   ⚠️ Auto-solve failed, falling back to manual...');
           }
@@ -301,40 +303,45 @@ export async function scrapeCommissions({
       } else {
         // No CAPTCHA, proceed with normal login
         console.log('🔑 Submitting login...');
-
-        const loginButtonSelector = await findSelector(page, [
-          'button[type="submit"]',
-          'button:has-text("Login")',
-          'button:has-text("Sign in")',
-          'button:has-text("Log in")',
-          'input[type="submit"]',
-        ]);
-
-        if (loginButtonSelector) {
-          await Promise.all([
-            page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {}),
-            page.click(loginButtonSelector),
-          ]);
-        } else {
-          await Promise.all([
-            page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {}),
-            page.keyboard.press('Enter'),
-          ]);
-        }
+        await submitLogin(page);
       }
 
-      // Wait for login to complete
-      await sleep(3000);
+      // Ensure we submit in CAPTCHA flows where callback handling did not auto-submit.
+      const stateAfterCaptcha = await getLoginState(page);
+      if (stateAfterCaptcha.onLoginPage) {
+        console.log('🔑 Submitting login...');
+        await submitLogin(page);
+      }
 
-      // Check if login succeeded
-      const loginFailed = await page.evaluate(() => {
-        const text = document.body.innerText.toLowerCase();
-        return text.includes('invalid') || text.includes('incorrect') ||
-               document.querySelector('input[type="password"]') !== null;
-      });
+      // Retry a couple of times for slow auth/captcha verification.
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        const loginState = await getLoginState(page);
+        if (!loginState.onLoginPage) {
+          break;
+        }
 
-      if (loginFailed) {
-        throw new Error('Login failed - check credentials');
+        if (loginState.hasCaptchaRequired && twoCaptchaKey && captchaSolveAttempts < 2) {
+          console.log('   🔁 CAPTCHA still required, retrying 2captcha solve...');
+          await solve2Captcha(page, twoCaptchaKey);
+          captchaSolveAttempts++;
+        }
+
+        console.log(`   🔁 Login still pending, retrying submit (${attempt}/2)...`);
+        await submitLogin(page);
+      }
+
+      const finalLoginState = await getLoginState(page);
+      if (finalLoginState.onLoginPage) {
+        if (finalLoginState.hasInvalidCredentials) {
+          throw new Error('Login failed - invalid credentials');
+        }
+        if (finalLoginState.hasCaptchaRequired) {
+          throw new Error('Login failed - CAPTCHA still required after auto-solve');
+        }
+        if (finalLoginState.hasTooManyAttempts) {
+          throw new Error('Login failed - too many attempts, please try later');
+        }
+        throw new Error(`Login failed - still on login page (${page.url()})`);
       }
 
       // Save cookies after successful login for future runs
@@ -599,11 +606,14 @@ async function injectRecaptchaToken(page, token) {
   return await page.evaluate((t) => {
     // 1. Set all g-recaptcha-response textareas (usually one, but be safe)
     const textareas = document.querySelectorAll(
-      '#g-recaptcha-response, textarea[name="g-recaptcha-response"]'
+      '#g-recaptcha-response, textarea[name="g-recaptcha-response"], textarea[id^="g-recaptcha-response"]'
     );
     textareas.forEach((el) => {
       el.value = t;
       el.innerHTML = t;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      el.dispatchEvent(new Event('blur', { bubbles: true }));
     });
 
     // 2. Try data-callback attribute on the widget element
@@ -710,6 +720,62 @@ async function solve2Captcha(page, apiKey) {
     console.log(`   ❌ 2captcha error: ${error.message}`);
     return false;
   }
+}
+
+/**
+ * Reads login page state after a submit attempt.
+ */
+async function getLoginState(page) {
+  return page.evaluate(() => {
+    const text = document.body.innerText.toLowerCase();
+    const hasPasswordField = document.querySelector('input[type="password"]') !== null;
+    const hasEmailField =
+      document.querySelector('input[type="email"], input[name="email"], input[type="text"]') !== null;
+    const onLoginPage = hasPasswordField || hasEmailField;
+
+    return {
+      onLoginPage,
+      hasInvalidCredentials:
+        text.includes('invalid') ||
+        text.includes('incorrect') ||
+        text.includes('wrong password') ||
+        text.includes('email or password is incorrect'),
+      hasCaptchaRequired:
+        text.includes('recaptcha is required') ||
+        text.includes("i'm not a robot") ||
+        text.includes('please verify you are human'),
+      hasTooManyAttempts:
+        text.includes('too many attempts') ||
+        text.includes('try again later'),
+    };
+  });
+}
+
+/**
+ * Clicks the login button (or Enter key fallback) and waits briefly.
+ */
+async function submitLogin(page) {
+  const loginButtonSelector = await findSelector(page, [
+    'button[type="submit"]',
+    'button:has-text("Login")',
+    'button:has-text("Sign in")',
+    'button:has-text("Log in")',
+    'input[type="submit"]',
+  ]);
+
+  if (loginButtonSelector) {
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {}),
+      page.click(loginButtonSelector),
+    ]);
+  } else {
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {}),
+      page.keyboard.press('Enter'),
+    ]);
+  }
+
+  await sleep(3000);
 }
 
 /**

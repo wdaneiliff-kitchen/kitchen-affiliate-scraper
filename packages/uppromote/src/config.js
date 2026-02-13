@@ -18,9 +18,14 @@ export const NETWORK_ID = 'uppromote';
  * Account configurations for different brands
  * Uses environment variables for credentials and URLs
  */
-// Shared credentials for all UpPromote accounts
-const EMAIL = process.env.UPPROMOTE_EMAIL;
-const PASSWORD = process.env.UPPROMOTE_PASSWORD;
+// Shared credentials for all UpPromote accounts (fallback).
+const DEFAULT_EMAIL = process.env.UPPROMOTE_EMAIL;
+const DEFAULT_PASSWORD = process.env.UPPROMOTE_PASSWORD;
+
+function resolveCredential(accountName, field) {
+  const envKey = `UPPROMOTE_${accountName.toUpperCase()}_${field}`;
+  return process.env[envKey] || (field === 'EMAIL' ? DEFAULT_EMAIL : DEFAULT_PASSWORD);
+}
 
 // These are public affiliate portal URLs, not secrets.
 // Keep env overrides for flexibility in CI/local testing.
@@ -40,36 +45,36 @@ function resolveBaseUrl(accountName) {
 export function getAccount(name) {
   const accounts = {
     luzz: {
-      email: EMAIL,
-      password: PASSWORD,
+      email: resolveCredential('luzz', 'EMAIL'),
+      password: resolveCredential('luzz', 'PASSWORD'),
       baseUrl: resolveBaseUrl('luzz'),
       advertiserId: 'luzz',
       advertiserName: 'Luzz',
     },
     honolulu: {
-      email: EMAIL,
-      password: PASSWORD,
+      email: resolveCredential('honolulu', 'EMAIL'),
+      password: resolveCredential('honolulu', 'PASSWORD'),
       baseUrl: resolveBaseUrl('honolulu'),
       advertiserId: 'honolulu',
       advertiserName: 'Honolulu',
     },
     holbrook: {
-      email: EMAIL,
-      password: PASSWORD,
+      email: resolveCredential('holbrook', 'EMAIL'),
+      password: resolveCredential('holbrook', 'PASSWORD'),
       baseUrl: resolveBaseUrl('holbrook'),
       advertiserId: 'holbrook',
       advertiserName: 'Holbrook',
     },
     diadem: {
-      email: EMAIL,
-      password: PASSWORD,
+      email: resolveCredential('diadem', 'EMAIL'),
+      password: resolveCredential('diadem', 'PASSWORD'),
       baseUrl: resolveBaseUrl('diadem'),
       advertiserId: 'diadem',
       advertiserName: 'Diadem',
     },
     pickleballapes: {
-      email: EMAIL,
-      password: PASSWORD,
+      email: resolveCredential('pickleballapes', 'EMAIL'),
+      password: resolveCredential('pickleballapes', 'PASSWORD'),
       baseUrl: resolveBaseUrl('pickleballapes'),
       advertiserId: 'pickleballapes',
       advertiserName: 'Pickleball Apes',
