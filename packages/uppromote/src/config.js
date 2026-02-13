@@ -18,13 +18,13 @@ export const NETWORK_ID = 'uppromote';
  * Account configurations for different brands
  * Uses environment variables for credentials and URLs
  */
-// Shared credentials for all UpPromote accounts (fallback).
-const DEFAULT_EMAIL = process.env.UPPROMOTE_EMAIL;
-const DEFAULT_PASSWORD = process.env.UPPROMOTE_PASSWORD;
-
 function resolveCredential(accountName, field) {
   const envKey = `UPPROMOTE_${accountName.toUpperCase()}_${field}`;
-  return process.env[envKey] || (field === 'EMAIL' ? DEFAULT_EMAIL : DEFAULT_PASSWORD);
+  if (process.env[envKey]) {
+    return process.env[envKey];
+  }
+  // Read shared fallback credentials at call time so .env loading order does not matter.
+  return field === 'EMAIL' ? process.env.UPPROMOTE_EMAIL : process.env.UPPROMOTE_PASSWORD;
 }
 
 // These are public affiliate portal URLs, not secrets.

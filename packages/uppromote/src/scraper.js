@@ -281,7 +281,7 @@ export async function scrapeCommissions({
               ]);
 
               if (loginBtn) {
-                await page.click(loginBtn);
+                await safeClick(page, loginBtn);
                 await sleep(3000);
               }
             }
@@ -711,7 +711,7 @@ async function solve2Captcha(page, apiKey) {
       'input[type="submit"]',
     ]);
     if (loginBtn) {
-      await page.click(loginBtn);
+      await safeClick(page, loginBtn);
       await sleep(3000);
     }
 
@@ -766,7 +766,7 @@ async function submitLogin(page) {
   if (loginButtonSelector) {
     await Promise.all([
       page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {}),
-      page.click(loginButtonSelector),
+      safeClick(page, loginButtonSelector),
     ]);
   } else {
     await Promise.all([
@@ -776,6 +776,33 @@ async function submitLogin(page) {
   }
 
   await sleep(3000);
+}
+
+/**
+ * Click helper that tolerates detached/covered login buttons.
+ */
+async function safeClick(page, selector) {
+  try {
+    await page.waitForSelector(selector, { visible: true, timeout: 5000 });
+  } catch (_) {
+    // Continue and try best-effort click strategies below.
+  }
+
+  try {
+    await page.click(selector, { delay: 25 });
+    return true;
+  } catch (_) {
+    // Fall through to DOM click fallback.
+  }
+
+  return page.evaluate((sel) => {
+    const el = document.querySelector(sel);
+    if (!el) return false;
+    if (!(el instanceof HTMLElement)) return false;
+    el.scrollIntoView({ block: 'center', inline: 'center' });
+    el.click();
+    return true;
+  }, selector);
 }
 
 /**
