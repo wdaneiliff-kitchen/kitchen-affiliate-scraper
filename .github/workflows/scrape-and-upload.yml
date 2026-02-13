@@ -51,6 +51,17 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-puppeteer-
 
+      - name: Restore session cookies cache
+        id: session-cookies-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            packages/affiliatly/.cookies/engage-cookies.json
+            packages/uppromote/.cookies/luzz-cookies.json
+          key: ${{ runner.os }}-session-cookies-v1-${{ github.run_id }}
+          restore-keys: |
+            ${{ runner.os }}-session-cookies-v1-
+
       - name: Install Chromium dependencies
         run: |
           sudo apt-get update
@@ -126,3 +137,12 @@ jobs:
           EOF
           )
           curl -s -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK_URL" || true
+
+      - name: Save session cookies cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            packages/affiliatly/.cookies/engage-cookies.json
+            packages/uppromote/.cookies/luzz-cookies.json
+          key: ${{ runner.os }}-session-cookies-v1-${{ github.run_id }}
