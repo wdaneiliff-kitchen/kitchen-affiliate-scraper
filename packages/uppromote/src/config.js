@@ -32,7 +32,7 @@ function resolveCredential(accountName, field) {
 const ACCOUNT_BASE_URLS = {
   luzz: 'https://af.uppromote.com/010661-db',
   honolulu: 'https://af.uppromote.com/4009c8-2',
-  holbrook: 'https://ambassadors.holbrookpickleball.com',
+  holbrook: 'https://ambassadors.holbrookpickleball.com/holbrookpickleball',
   diadem: 'https://af.uppromote.com/diademsports',
   pickleballapes: 'https://af.uppromote.com/pickleballapes',
 };

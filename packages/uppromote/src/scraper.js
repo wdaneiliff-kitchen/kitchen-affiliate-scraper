@@ -594,6 +594,23 @@ async function injectRecaptchaToken(page, token) {
       el.dispatchEvent(new Event('blur', { bubbles: true }));
     });
 
+    // 1b. Ensure the token is sent on native form submit. reCAPTCHA's textarea is often
+    //     injected outside the form (e.g. at end of body), so form.submit() won't include it.
+    //     UpPromote uses a classic POST form (no data-callback); add a hidden input inside
+    //     the form so the POST body always contains g-recaptcha-response.
+    const form = document.querySelector('form[id="login-form"], form[action*="login"]') || document.querySelector('form');
+    if (form) {
+      const existing = form.querySelector('input[name="g-recaptcha-response"]');
+      if (existing) existing.value = t;
+      else {
+        const hidden = document.createElement('input');
+        hidden.type = 'hidden';
+        hidden.name = 'g-recaptcha-response';
+        hidden.value = t;
+        form.appendChild(hidden);
+      }
+    }
+
     // 2. Patch grecaptcha so AJAX form submissions pick up the token.
     //    Many Laravel/JS apps call grecaptcha.getResponse() rather than reading the
     //    textarea directly — if we only set the textarea the server gets an empty token.
@@ -698,23 +715,33 @@ async function solve2Captcha(page, apiKey) {
     const callbackInvoked = await injectRecaptchaToken(page, token);
     console.log(`   ${callbackInvoked ? '✅ Callback invoked' : '⚠️ No callback found, token set in textarea + getResponse() patched'}`);
 
-    await sleep(500);
+    // Give the page's JS time to see the patched getResponse() (important in headless/CI).
+    await sleep(1500);
 
-    // Try clicking the submit button (with waitForNavigation so we don't race ahead)
-    const loginBtn = await findSelector(page, [
+    // Scroll submit button into view so it's not covered by reCAPTCHA iframe (common in headless).
+    const loginBtnSelector = await findSelector(page, [
       'button[type="submit"]',
       'input[type="submit"]',
     ]);
-    if (loginBtn) {
+    if (loginBtnSelector) {
+      await page.evaluate((sel) => {
+        const btn = document.querySelector(sel);
+        if (btn) btn.scrollIntoView({ block: 'center', inline: 'center' });
+      }, loginBtnSelector);
+      await sleep(300);
+    }
+
+    // Try clicking the submit button (with waitForNavigation so we don't race ahead).
+    if (loginBtnSelector) {
       await Promise.all([
         page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {}),
-        safeClick(page, loginBtn),
+        safeClick(page, loginBtnSelector),
       ]);
       await sleep(2000);
     }
 
     // Check if we navigated away from login
-    const afterClickState = await page.evaluate(() => {
+    let afterClickState = await page.evaluate(() => {
       return document.querySelector('input[type="password"]') !== null;
     });
     if (!afterClickState) {
@@ -722,12 +749,33 @@ async function solve2Captcha(page, apiKey) {
       return true;
     }
 
-    // Still on login page — try form.submit() as fallback.
-    // Some forms use JS that reads grecaptcha.getResponse() — the patched version
-    // returns our token, but the button click may have triggered an AJAX handler
-    // that ran before our patch took effect. Native form.submit() includes the
-    // g-recaptcha-response textarea value directly.
-    console.log('   🔁 Button click did not navigate, trying form.submit()...');
+    // Button click didn't navigate. Many Laravel/JS forms use a submit handler that calls
+    // grecaptcha.getResponse() and then does fetch() — form.submit() does NOT fire that
+    // event, so the handler never runs. Dispatch a synthetic submit event so the handler
+    // runs with our patched getResponse() (works in headless/CI where click may not trigger).
+    console.log('   🔁 Dispatching submit event so form handler runs with token...');
+    const submitEventDispatched = await page.evaluate(() => {
+      const form = document.querySelector('form');
+      const btn = document.querySelector('button[type="submit"]') || document.querySelector('input[type="submit"]');
+      if (form && btn) {
+        const ev = new SubmitEvent('submit', { bubbles: true, cancelable: true, submitter: btn });
+        form.dispatchEvent(ev);
+        return true;
+      }
+      return false;
+    });
+    if (submitEventDispatched) {
+      await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+      await sleep(2000);
+      afterClickState = await page.evaluate(() => document.querySelector('input[type="password"]') !== null);
+      if (!afterClickState) {
+        console.log('   ✅ Submit event triggered login');
+        return true;
+      }
+    }
+
+    // Last resort: native form.submit() (sends g-recaptcha-response in form body).
+    console.log('   🔁 Trying native form.submit()...');
     const formSubmitted = await page.evaluate(() => {
       const form = document.querySelector('form');
       if (form) { form.submit(); return true; }

@@ -81,7 +81,7 @@ UPPROMOTE_HONOLULU_BASE_URL=https://af.uppromote.com/honolulu-shop-id
 # UpPromote - Holbrook
 UPPROMOTE_HOLBROOK_EMAIL=your-email@example.com
 UPPROMOTE_HOLBROOK_PASSWORD=your-password
-UPPROMOTE_HOLBROOK_BASE_URL=https://af.uppromote.com/holbrook-shop-id
+UPPROMOTE_HOLBROOK_BASE_URL=https://ambassadors.holbrookpickleball.com/holbrookpickleball
 
 # UpPromote - Diadem
 UPPROMOTE_DIADEM_EMAIL=your-email@example.com
