@@ -183,6 +183,17 @@ export async function scrapeCommissions({
     if (isLoginPage) {
       if (hasSavedCookies) {
         console.log('   ⚠️ Saved cookies expired, need to login again');
+        // Clear stale cookies to avoid CSRF token mismatch with the fresh page.
+        // Laravel sessions embed a CSRF token in the cookie; stale values cause
+        // silent 419 (Page Expired) rejections on form submit.
+        const client = await page.createCDPSession();
+        await client.send('Network.clearBrowserCookies');
+        await client.detach();
+        console.log('   🗑️ Cleared stale cookies');
+        // Reload to get a fresh CSRF token
+        await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        await page.waitForSelector('input[type="password"]', { timeout: 15000 }).catch(() => {});
+        await sleep(1000);
       }
       console.log('🔐 Login required, entering credentials...');
 
@@ -320,14 +331,17 @@ export async function scrapeCommissions({
           break;
         }
 
-        if (loginState.hasCaptchaRequired && twoCaptchaKey && captchaSolveAttempts < 2) {
-          console.log('   🔁 CAPTCHA still required, retrying 2captcha solve...');
+        // Always re-solve captcha when still on login page and we have a key.
+        // The page may not show explicit "reCAPTCHA required" text even though the
+        // previous token was rejected or expired. A fresh solve is the safest bet.
+        if (twoCaptchaKey && captchaSolveAttempts < 3) {
+          console.log(`   🔁 Still on login page, re-solving CAPTCHA (attempt ${captchaSolveAttempts + 1})...`);
           await solve2Captcha(page, twoCaptchaKey);
           captchaSolveAttempts++;
+        } else {
+          console.log(`   🔁 Login still pending, retrying submit (${attempt}/2)...`);
+          await submitLogin(page);
         }
-
-        console.log(`   🔁 Login still pending, retrying submit (${attempt}/2)...`);
-        await submitLogin(page);
       }
 
       const finalLoginState = await getLoginState(page);
@@ -616,7 +630,19 @@ async function injectRecaptchaToken(page, token) {
       el.dispatchEvent(new Event('blur', { bubbles: true }));
     });
 
-    // 2. Try data-callback attribute on the widget element
+    // 2. Patch grecaptcha.getResponse() so AJAX form submissions pick up the token.
+    //    Many Laravel/JS apps call grecaptcha.getResponse() rather than reading the
+    //    textarea directly — if we only set the textarea the server gets an empty token.
+    try {
+      if (window.grecaptcha) {
+        window.grecaptcha.getResponse = function () { return t; };
+        if (window.grecaptcha.enterprise) {
+          window.grecaptcha.enterprise.getResponse = function () { return t; };
+        }
+      }
+    } catch (_) { /* ignore if frozen */ }
+
+    // 3. Try data-callback attribute on the widget element
     const widget = document.querySelector('.g-recaptcha, [data-sitekey]');
     if (widget) {
       const callbackName = widget.getAttribute('data-callback');
@@ -626,7 +652,7 @@ async function injectRecaptchaToken(page, token) {
       }
     }
 
-    // 3. Walk ___grecaptcha_cfg.clients to find the callback
+    // 4. Walk ___grecaptcha_cfg.clients to find the callback
     try {
       const clients = window.___grecaptcha_cfg?.clients;
       if (clients) {
@@ -658,7 +684,7 @@ async function injectRecaptchaToken(page, token) {
       // ignore errors walking internal config
     }
 
-    // 4. Try common global callback names as last resort
+    // 5. Try common global callback names as last resort
     const globalNames = ['onRecaptchaSuccess', 'captchaCallback', 'onCaptchaSuccess', 'recaptchaCallback'];
     for (const name of globalNames) {
       if (typeof window[name] === 'function') {
@@ -702,10 +728,11 @@ async function solve2Captcha(page, apiKey) {
     console.log(`   ✅ Got CAPTCHA solution!`);
 
     const callbackInvoked = await injectRecaptchaToken(page, token);
-    console.log(`   ${callbackInvoked ? '✅ Callback invoked' : '⚠️ No callback found, token set in textarea only'}`);
+    console.log(`   ${callbackInvoked ? '✅ Callback invoked' : '⚠️ No callback found, token set in textarea + getResponse() patched'}`);
 
     await sleep(500);
 
+    // Try clicking the submit button first
     const loginBtn = await findSelector(page, [
       'button[type="submit"]',
       'input[type="submit"]',
@@ -713,6 +740,27 @@ async function solve2Captcha(page, apiKey) {
     if (loginBtn) {
       await safeClick(page, loginBtn);
       await sleep(3000);
+    }
+
+    // If still on login page and no callback was invoked, try form.submit() directly.
+    // Some forms use JS that reads grecaptcha.getResponse() — the patched version will
+    // return our token, but if the button click triggered a JS handler that already ran
+    // with the old (empty) getResponse, we need a fresh submit.
+    if (!callbackInvoked) {
+      const stillOnLogin = await page.evaluate(() => {
+        return document.querySelector('input[type="password"]') !== null;
+      });
+      if (stillOnLogin) {
+        console.log('   🔁 Button click did not navigate, trying form.submit()...');
+        await Promise.all([
+          page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {}),
+          page.evaluate(() => {
+            const form = document.querySelector('form');
+            if (form) form.submit();
+          }),
+        ]);
+        await sleep(2000);
+      }
     }
 
     return true;

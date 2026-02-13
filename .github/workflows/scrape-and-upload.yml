@@ -61,6 +61,10 @@ jobs:
           path: |
             packages/affiliatly/.cookies/engage-cookies.json
             packages/uppromote/.cookies/luzz-cookies.json
+            packages/uppromote/.cookies/honolulu-cookies.json
+            packages/uppromote/.cookies/holbrook-cookies.json
+            packages/uppromote/.cookies/diadem-cookies.json
+            packages/uppromote/.cookies/pickleballapes-cookies.json
           key: ${{ runner.os }}-session-cookies-v1-${{ github.run_id }}
           restore-keys: |
             ${{ runner.os }}-session-cookies-v1-
@@ -173,6 +177,10 @@ jobs:
           path: |
             packages/affiliatly/.cookies/engage-cookies.json
             packages/uppromote/.cookies/luzz-cookies.json
+            packages/uppromote/.cookies/honolulu-cookies.json
+            packages/uppromote/.cookies/holbrook-cookies.json
+            packages/uppromote/.cookies/diadem-cookies.json
+            packages/uppromote/.cookies/pickleballapes-cookies.json
           key: ${{ runner.os }}-session-cookies-v1-${{ github.run_id }}
 
       - name: Delete session cookie caches older than 7 days
