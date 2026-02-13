@@ -198,7 +198,7 @@ function validateConfig({ scrapeOnly, uploadOnly, createSheet, account }) {
     password: account.password,
     spreadsheetId: process.env.GOOGLE_SHEET_ID,
     credentialsPath: process.env.GOOGLE_CREDENTIALS_PATH || resolve(__dirname, '../../../credentials.json'),
-    sheetName: process.env.SHEET_NAME || 'Commissions',
+    sheetName: process.env.SHEET_NAME || 'Comissions',
   };
 
   const missing = [];

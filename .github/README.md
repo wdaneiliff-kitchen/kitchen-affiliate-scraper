@@ -21,11 +21,6 @@ In **Settings → Secrets and variables → Actions**, add:
 | `SHORTLY_PASSWORD` | Shortly (Paddletek) |
 | `UPPROMOTE_EMAIL` | UpPromote (shared across all accounts) |
 | `UPPROMOTE_PASSWORD` | UpPromote (shared across all accounts) |
-| `UPPROMOTE_LUZZ_BASE_URL` | UpPromote – Luzz |
-| `UPPROMOTE_HONOLULU_BASE_URL` | UpPromote – Honolulu |
-| `UPPROMOTE_DIADEM_BASE_URL` | UpPromote – Diadem |
-| `UPPROMOTE_HOLBROOK_BASE_URL` | UpPromote – Holbrook |
-| `UPPROMOTE_PICKLEBALLAPES_BASE_URL` | UpPromote – Pickleball Apes |
 | `AFFILIATLY_EMAIL` | Affiliatly |
 | `AFFILIATLY_PASSWORD` | Affiliatly |
 | `GOOGLE_SHEET_ID` | All (target spreadsheet ID) |

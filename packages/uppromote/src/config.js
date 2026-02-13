@@ -22,40 +22,55 @@ export const NETWORK_ID = 'uppromote';
 const EMAIL = process.env.UPPROMOTE_EMAIL;
 const PASSWORD = process.env.UPPROMOTE_PASSWORD;
 
+// These are public affiliate portal URLs, not secrets.
+// Keep env overrides for flexibility in CI/local testing.
+const ACCOUNT_BASE_URLS = {
+  luzz: 'https://af.uppromote.com/010661-db',
+  honolulu: 'https://af.uppromote.com/4009c8-2',
+  holbrook: 'https://ambassadors.holbrookpickleball.com',
+  diadem: 'https://af.uppromote.com/diademsports',
+  pickleballapes: 'https://af.uppromote.com/pickleballapes',
+};
+
+function resolveBaseUrl(accountName) {
+  const envKey = `UPPROMOTE_${accountName.toUpperCase()}_BASE_URL`;
+  return process.env[envKey] || ACCOUNT_BASE_URLS[accountName];
+}
+
 export function getAccount(name) {
   const accounts = {
     luzz: {
       email: EMAIL,
       password: PASSWORD,
-      baseUrl: process.env.UPPROMOTE_LUZZ_BASE_URL,
+      baseUrl: resolveBaseUrl('luzz'),
       advertiserId: 'luzz',
       advertiserName: 'Luzz',
     },
     honolulu: {
       email: EMAIL,
       password: PASSWORD,
-      baseUrl: process.env.UPPROMOTE_HONOLULU_BASE_URL,
+      baseUrl: resolveBaseUrl('honolulu'),
       advertiserId: 'honolulu',
       advertiserName: 'Honolulu',
     },
     holbrook: {
       email: EMAIL,
       password: PASSWORD,
-      baseUrl: process.env.UPPROMOTE_HOLBROOK_BASE_URL,
+      baseUrl: resolveBaseUrl('holbrook'),
       advertiserId: 'holbrook',
       advertiserName: 'Holbrook',
     },
     diadem: {
       email: EMAIL,
       password: PASSWORD,
-      baseUrl: process.env.UPPROMOTE_DIADEM_BASE_URL,
+      baseUrl: resolveBaseUrl('diadem'),
       advertiserId: 'diadem',
       advertiserName: 'Diadem',
     },
     pickleballapes: {
       email: EMAIL,
       password: PASSWORD,
-      baseUrl: process.env.UPPROMOTE_PICKLEBALLAPES_BASE_URL,
+      baseUrl: resolveBaseUrl('pickleballapes'),
       advertiserId: 'pickleballapes',
       advertiserName: 'Pickleball Apes',
     },

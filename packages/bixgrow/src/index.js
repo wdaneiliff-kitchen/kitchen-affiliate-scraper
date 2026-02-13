@@ -156,7 +156,7 @@ function validateConfig({ scrapeOnly, uploadOnly, createSheet }) {
     password: process.env.BIXGROW_PASSWORD,
     spreadsheetId: process.env.GOOGLE_SHEET_ID,
     credentialsPath: process.env.GOOGLE_CREDENTIALS_PATH || resolve(__dirname, '../../../credentials.json'),
-    sheetName: process.env.SHEET_NAME || 'Commissions',
+    sheetName: process.env.SHEET_NAME || 'Comissions',
     startDate: process.env.START_DATE,
     endDate: process.env.END_DATE,
   };

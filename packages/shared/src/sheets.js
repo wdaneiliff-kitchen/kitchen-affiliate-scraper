@@ -31,7 +31,7 @@ async function getAuthenticatedClient(credentialsPath) {
  * @param {string} options.spreadsheetId - Google Sheet ID
  * @param {string} options.credentialsPath - Path to service account JSON
  * @param {Array} options.records - Transformed commission records
- * @param {string} [options.sheetName='Commissions'] - Sheet/tab name
+ * @param {string} [options.sheetName='Comissions'] - Sheet/tab name
  * @param {boolean} [options.clearFirst=false] - Clear existing data before uploading
  * @param {boolean} [options.dedupeByTransactionId=true] - Skip records with existing transaction_id
  * @returns {Promise<Object>} Upload result with counts
@@ -40,7 +40,7 @@ export async function uploadToSheets({
   spreadsheetId,
   credentialsPath,
   records,
-  sheetName = 'Commissions',
+  sheetName = 'Comissions',
   clearFirst = false,
   dedupeByTransactionId = true,
 }) {
@@ -189,7 +189,7 @@ export async function createSpreadsheet({ credentialsPath, title }) {
     requestBody: {
       properties: { title },
       sheets: [{
-        properties: { title: 'Commissions' },
+        properties: { title: 'Comissions' },
       }],
     },
   });
