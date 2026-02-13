@@ -596,9 +596,9 @@ async function setDateFilter(page) {
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
                   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const now = new Date();
-  const toDate = `${MONTHS[now.getMonth()]}/${String(now.getDate()).padStart(2, '0')}/${now.getFullYear()}`;
+  const toDate = `${MONTHS[now.getUTCMonth()]}/${String(now.getUTCDate()).padStart(2, '0')}/${now.getUTCFullYear()}`;
   // Go back 2 years to be safe
-  const fromDate = `Jan/01/${now.getFullYear() - 2}`;
+  const fromDate = `Jan/01/${now.getUTCFullYear() - 2}`;
 
   console.log(`📅 Setting date filter: ${fromDate} → ${toDate}`);
 

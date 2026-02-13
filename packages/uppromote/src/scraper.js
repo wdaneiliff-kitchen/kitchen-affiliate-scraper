@@ -246,70 +246,12 @@ export async function scrapeCommissions({
           }
         }
 
-        // Check if still need manual solving
-        const stillHasCaptcha = await page.evaluate(() => {
-          return document.body.innerText.includes("I'm not a robot") ||
-                 document.body.innerText.includes('reCAPTCHA is required');
-        });
-
-        if (stillHasCaptcha) {
-          console.log('\n🤖 reCAPTCHA requires manual solving!');
-
-          if (headless) {
-            throw new Error('CAPTCHA detected but running in headless mode. Please run with --visible flag to solve manually.');
-          }
-
-          console.log('   ⏸️  Please solve the CAPTCHA in the browser window...');
-          console.log('   ⏳ Waiting up to 120 seconds...\n');
-
-          // Wait for CAPTCHA to be solved
-          let captchaSolved = false;
-          for (let i = 0; i < 60; i++) {
-            await sleep(2000);
-
-            // Check if we've navigated away from login
-            const stillOnLogin = await page.evaluate(() => {
-              return document.querySelector('input[type="password"]') !== null;
-            });
-
-            if (!stillOnLogin) {
-              captchaSolved = true;
-              console.log('   ✅ CAPTCHA solved and login successful!');
-              break;
-            }
-
-            // Check if CAPTCHA error is gone (user solved it)
-            const captchaErrorGone = await page.evaluate(() => {
-              return !document.body.innerText.includes('reCAPTCHA is required');
-            });
-
-            if (captchaErrorGone && i > 2) {
-              console.log('   🔄 CAPTCHA appears solved, clicking login...');
-
-              const loginBtn = await findSelector(page, [
-                'button[type="submit"]',
-                'button:has-text("Login")',
-              ]);
-
-              if (loginBtn) {
-                await safeClick(page, loginBtn);
-                await sleep(3000);
-              }
-            }
-
-            if (i % 10 === 0 && i > 0) {
-              console.log(`   ⏳ Still waiting... (${i * 2}s)`);
-            }
-          }
-
-          if (!captchaSolved) {
-            const finalCheck = await page.evaluate(() => {
-              return document.querySelector('input[type="password"]') !== null;
-            });
-            if (finalCheck) {
-              throw new Error('CAPTCHA not solved in time. Try again with --visible flag.');
-            }
-          }
+        // When 2captcha is available, let the retry logic below re-solve if the
+        // first token was rejected. The reCAPTCHA widget text ("I'm not a robot")
+        // stays in the DOM even after injecting a solved token, so checking it here
+        // gives false positives that would throw before retries can run.
+        if (!twoCaptchaKey) {
+          throw new Error('CAPTCHA detected but no TWOCAPTCHA_API_KEY configured. Cannot solve in CI.');
         }
       } else {
         // No CAPTCHA, proceed with normal login
@@ -320,12 +262,22 @@ export async function scrapeCommissions({
       // Ensure we submit in CAPTCHA flows where callback handling did not auto-submit.
       const stateAfterCaptcha = await getLoginState(page);
       if (stateAfterCaptcha.onLoginPage) {
-        console.log('🔑 Submitting login...');
-        await submitLogin(page);
+        // When CAPTCHA was solved via 2captcha, re-solve rather than doing a bare
+        // submit — the previous token may have been consumed/rejected and the fresh
+        // page requires a new one. A bare submit without a token just wastes an
+        // attempt and may trigger rate limiting.
+        if (twoCaptchaKey && captchaSolveAttempts > 0) {
+          console.log(`   🔁 Still on login page after CAPTCHA solve, re-solving (attempt ${captchaSolveAttempts + 1})...`);
+          await solve2Captcha(page, twoCaptchaKey);
+          captchaSolveAttempts++;
+        } else {
+          console.log('🔑 Submitting login...');
+          await submitLogin(page);
+        }
       }
 
-      // Retry a couple of times for slow auth/captcha verification.
-      for (let attempt = 1; attempt <= 2; attempt++) {
+      // Retry a few times for slow auth/captcha verification.
+      for (let attempt = 1; attempt <= 3; attempt++) {
         const loginState = await getLoginState(page);
         if (!loginState.onLoginPage) {
           break;
@@ -334,12 +286,12 @@ export async function scrapeCommissions({
         // Always re-solve captcha when still on login page and we have a key.
         // The page may not show explicit "reCAPTCHA required" text even though the
         // previous token was rejected or expired. A fresh solve is the safest bet.
-        if (twoCaptchaKey && captchaSolveAttempts < 3) {
+        if (twoCaptchaKey && captchaSolveAttempts < 4) {
           console.log(`   🔁 Still on login page, re-solving CAPTCHA (attempt ${captchaSolveAttempts + 1})...`);
           await solve2Captcha(page, twoCaptchaKey);
           captchaSolveAttempts++;
         } else {
-          console.log(`   🔁 Login still pending, retrying submit (${attempt}/2)...`);
+          console.log(`   🔁 Login still pending, retrying submit (${attempt}/3)...`);
           await submitLogin(page);
         }
       }
@@ -372,6 +324,18 @@ export async function scrapeCommissions({
       console.log('📊 Navigating to commissions page...');
       await page.goto(COMMISSIONS_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
       await page.waitForSelector('table, .commission, [class*="commission"]', { timeout: 30000 }).catch(() => {});
+    }
+
+    // Detect 404 / error pages before spending time on data extraction.
+    // Some UpPromote custom domains drop routes without warning.
+    const pageTitle = await page.title();
+    if (pageTitle === '404' || pageTitle.toLowerCase().includes('not found')) {
+      const bodySnippet = await page.evaluate(() => document.body.innerText.slice(0, 300));
+      throw new Error(
+        `Commission page returned 404 (${page.url()}). ` +
+        `The UpPromote route may have changed — verify the base URL in config.\n` +
+        `   Page text: ${bodySnippet.slice(0, 150)}`
+      );
     }
 
     // Wait for the page to load data
@@ -630,14 +594,18 @@ async function injectRecaptchaToken(page, token) {
       el.dispatchEvent(new Event('blur', { bubbles: true }));
     });
 
-    // 2. Patch grecaptcha.getResponse() so AJAX form submissions pick up the token.
+    // 2. Patch grecaptcha so AJAX form submissions pick up the token.
     //    Many Laravel/JS apps call grecaptcha.getResponse() rather than reading the
     //    textarea directly — if we only set the textarea the server gets an empty token.
+    //    Some forms use invisible reCAPTCHA and call grecaptcha.execute() instead,
+    //    which returns a Promise; patch that too so the resolved value is our token.
     try {
       if (window.grecaptcha) {
         window.grecaptcha.getResponse = function () { return t; };
+        window.grecaptcha.execute = function () { return Promise.resolve(t); };
         if (window.grecaptcha.enterprise) {
           window.grecaptcha.enterprise.getResponse = function () { return t; };
+          window.grecaptcha.enterprise.execute = function () { return Promise.resolve(t); };
         }
       }
     } catch (_) { /* ignore if frozen */ }
@@ -732,35 +700,52 @@ async function solve2Captcha(page, apiKey) {
 
     await sleep(500);
 
-    // Try clicking the submit button first
+    // Try clicking the submit button (with waitForNavigation so we don't race ahead)
     const loginBtn = await findSelector(page, [
       'button[type="submit"]',
       'input[type="submit"]',
     ]);
     if (loginBtn) {
-      await safeClick(page, loginBtn);
-      await sleep(3000);
+      await Promise.all([
+        page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {}),
+        safeClick(page, loginBtn),
+      ]);
+      await sleep(2000);
     }
 
-    // If still on login page and no callback was invoked, try form.submit() directly.
-    // Some forms use JS that reads grecaptcha.getResponse() — the patched version will
-    // return our token, but if the button click triggered a JS handler that already ran
-    // with the old (empty) getResponse, we need a fresh submit.
-    if (!callbackInvoked) {
-      const stillOnLogin = await page.evaluate(() => {
-        return document.querySelector('input[type="password"]') !== null;
-      });
-      if (stillOnLogin) {
-        console.log('   🔁 Button click did not navigate, trying form.submit()...');
-        await Promise.all([
-          page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {}),
-          page.evaluate(() => {
-            const form = document.querySelector('form');
-            if (form) form.submit();
-          }),
-        ]);
-        await sleep(2000);
-      }
+    // Check if we navigated away from login
+    const afterClickState = await page.evaluate(() => {
+      return document.querySelector('input[type="password"]') !== null;
+    });
+    if (!afterClickState) {
+      console.log('   ✅ Login submit succeeded after CAPTCHA solve');
+      return true;
+    }
+
+    // Still on login page — try form.submit() as fallback.
+    // Some forms use JS that reads grecaptcha.getResponse() — the patched version
+    // returns our token, but the button click may have triggered an AJAX handler
+    // that ran before our patch took effect. Native form.submit() includes the
+    // g-recaptcha-response textarea value directly.
+    console.log('   🔁 Button click did not navigate, trying form.submit()...');
+    const formSubmitted = await page.evaluate(() => {
+      const form = document.querySelector('form');
+      if (form) { form.submit(); return true; }
+      return false;
+    });
+
+    if (formSubmitted) {
+      await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+      await sleep(2000);
+    }
+
+    const afterSubmitState = await page.evaluate(() => {
+      return document.querySelector('input[type="password"]') !== null;
+    });
+    if (!afterSubmitState) {
+      console.log('   ✅ form.submit() succeeded after CAPTCHA solve');
+    } else {
+      console.log('   ⚠️ Still on login page after CAPTCHA solve + form submit');
     }
 
     return true;

@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 /**
  * Generic transformer for affiliate commission data.
  * Each scraper provides its own field mappings via config.
@@ -92,15 +94,30 @@ export function createTransformer(config) {
    * Transforms a single raw record to the target schema
    */
   function transformRecord(raw) {
+    // Resolve fields needed for both output and deterministic ID generation
+    const orderDate = formatDateUTC(findField(raw, fieldMappings.order_date));
+    const saleAmount = toCents(findField(raw, fieldMappings.sale_amount));
+    const commissionAmount = toCents(findField(raw, fieldMappings.commission_amount));
+    const subId2 = String(findField(raw, fieldMappings.sub_id_2) || '');
+
+    // Use natural transaction ID if available, otherwise generate a deterministic one
+    const naturalId = findField(raw, fieldMappings.transaction_id);
+
     const transformed = {
       // Required fields
-      transaction_id: findField(raw, fieldMappings.transaction_id) || generateTransactionId(raw),
+      transaction_id: naturalId || generateTransactionId({
+        advertiserId,
+        orderDate,
+        saleAmount,
+        commissionAmount,
+        subId2,
+      }),
       advertiser_id: advertiserId,
       advertiser_name: advertiserName,
-      order_date: formatDateUTC(findField(raw, fieldMappings.order_date)),
+      order_date: orderDate,
       currency_id: normalizeCurrency(findField(raw, fieldMappings.currency_id)),
-      sale_amount: toCents(findField(raw, fieldMappings.sale_amount)),
-      commission_amount: toCents(findField(raw, fieldMappings.commission_amount)),
+      sale_amount: saleAmount,
+      commission_amount: commissionAmount,
       status: normalizeStatus(findField(raw, fieldMappings.status)),
 
       // Optional fields
@@ -108,7 +125,7 @@ export function createTransformer(config) {
       validation_date: formatDateUTC(findField(raw, fieldMappings.validation_date)) || '',
       modified_date: formatDateUTC(findField(raw, fieldMappings.modified_date)) || '',
       sub_id_1: String(findField(raw, fieldMappings.sub_id_1) || ''),
-      sub_id_2: String(findField(raw, fieldMappings.sub_id_2) || ''),
+      sub_id_2: subId2,
       sub_id_3: String(findField(raw, fieldMappings.sub_id_3) || ''),
       sub_id_4: String(findField(raw, fieldMappings.sub_id_4) || ''),
       sub_id_5: String(findField(raw, fieldMappings.sub_id_5) || ''),
@@ -157,20 +174,37 @@ export function createTransformer(config) {
 }
 
 /**
- * Generates a transaction ID if none exists
+ * Generates a deterministic transaction ID from already-resolved field values.
+ * Uses a SHA-256 content hash so the same order always produces the same ID
+ * regardless of when or where the scraper runs.
+ *
+ * Includes advertiserId, orderDate, amounts, and sub_id_2 (typically the
+ * product/landing page URL) to differentiate orders that share the same
+ * date and amounts.
+ *
+ * @param {Object} fields - Already-resolved field values
+ * @returns {string} Deterministic transaction ID like "gen_AbCdEf1234567890"
  */
-function generateTransactionId(record) {
+function generateTransactionId(fields) {
   const parts = [
-    record.order_date || record.created_at || Date.now(),
-    record.amount || record.sale_amount || 0,
-    record.commission || record.commission_amount || 0,
+    fields.advertiserId || '',
+    fields.orderDate || '',
+    fields.saleAmount || 0,
+    fields.commissionAmount || 0,
+    fields.subId2 || '',
   ];
-  return `gen_${Buffer.from(parts.join('_')).toString('base64').slice(0, 16)}`;
+  const content = parts.join('|');
+  const hash = createHash('sha256').update(content).digest('base64url').slice(0, 16);
+  return `gen_${hash}`;
 }
 
 /**
  * Formats a date to Y-m-d H:i:s UTC format.
  * Handles relative time prefixes from scraped pages (e.g., "14 hours agoFeb 7, 2026 8:20 PM").
+ *
+ * All ambiguous date strings (without explicit timezone info) are treated as
+ * UTC to ensure consistent output regardless of where the code runs (e.g.,
+ * local machine in PST vs GitHub Actions in UTC).
  */
 export function formatDateUTC(dateValue) {
   if (!dateValue) return '';
@@ -178,9 +212,9 @@ export function formatDateUTC(dateValue) {
   try {
     const str = String(dateValue).trim();
 
-    // Try direct parse first
-    let date = new Date(str);
-    if (!isNaN(date.getTime())) {
+    // Try direct parse (forced to UTC for ambiguous strings)
+    let date = parseAsUTC(str);
+    if (date) {
       return formatDateComponents(date);
     }
 
@@ -188,8 +222,8 @@ export function formatDateUTC(dateValue) {
     const agoIndex = str.lastIndexOf('ago');
     if (agoIndex !== -1) {
       const afterAgo = str.slice(agoIndex + 3).trim();
-      date = new Date(afterAgo);
-      if (!isNaN(date.getTime())) {
+      date = parseAsUTC(afterAgo);
+      if (date) {
         return formatDateComponents(date);
       }
     }
@@ -198,8 +232,8 @@ export function formatDateUTC(dateValue) {
     const monthPattern = /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},?\s+\d{4}[\s\d:APMapm]*/i;
     const monthMatch = str.match(monthPattern);
     if (monthMatch) {
-      date = new Date(monthMatch[0].trim());
-      if (!isNaN(date.getTime())) {
+      date = parseAsUTC(monthMatch[0].trim());
+      if (date) {
         return formatDateComponents(date);
       }
     }
@@ -209,6 +243,58 @@ export function formatDateUTC(dateValue) {
     console.warn('Failed to parse date:', dateValue);
     return '';
   }
+}
+
+/**
+ * Parses a date string, treating ambiguous strings (no timezone info) as UTC.
+ * This ensures consistent results regardless of the system timezone.
+ *
+ * Behaviour by format:
+ * - "2025-12-23"                → UTC by spec (ISO date-only)
+ * - "2025-12-23T19:12:00"      → append "Z" to force UTC
+ * - "2025-12-23T19:12:00Z"     → already UTC, parse as-is
+ * - "Dec 23, 2025 7:12 PM"     → append " UTC" to force UTC
+ * - "Dec 23, 2025 7:12 PM GMT" → already has timezone, parse as-is
+ *
+ * @param {string} str - Date string to parse
+ * @returns {Date|null} Parsed Date object or null if unparseable
+ */
+function parseAsUTC(str) {
+  if (!str) return null;
+
+  // Already has timezone info — parse as-is
+  if (hasTimezoneInfo(str)) {
+    const date = new Date(str);
+    return isNaN(date.getTime()) ? null : date;
+  }
+
+  // ISO format with time but no timezone (e.g., "2025-12-23T19:12:00") — append Z
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(str)) {
+    const date = new Date(str + 'Z');
+    if (!isNaN(date.getTime())) return date;
+  }
+
+  // ISO date-only (e.g., "2025-12-23") — already treated as UTC by spec
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+    const date = new Date(str);
+    if (!isNaN(date.getTime())) return date;
+  }
+
+  // Non-ISO format (e.g., "Feb 7, 2026 8:20 PM") — append " UTC" to force UTC
+  const dateWithUTC = new Date(str + ' UTC');
+  if (!isNaN(dateWithUTC.getTime())) return dateWithUTC;
+
+  // Final fallback: try original string
+  const date = new Date(str);
+  return isNaN(date.getTime()) ? null : date;
+}
+
+/**
+ * Returns true if the date string contains explicit timezone information.
+ */
+function hasTimezoneInfo(str) {
+  // Z suffix, UTC/GMT, or ±HH:MM / ±HHMM offset at end of string
+  return /(?:Z|UTC|GMT|[+-]\d{2}:?\d{2})\s*$/i.test(str);
 }
 
 /**
