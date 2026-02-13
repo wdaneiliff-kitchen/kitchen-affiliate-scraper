@@ -730,8 +730,8 @@ async function getLoginState(page) {
     const text = document.body.innerText.toLowerCase();
     const hasPasswordField = document.querySelector('input[type="password"]') !== null;
     const hasEmailField =
-      document.querySelector('input[type="email"], input[name="email"], input[type="text"]') !== null;
-    const onLoginPage = hasPasswordField || hasEmailField;
+      document.querySelector('input[type="email"], input[name="email"]') !== null;
+    const onLoginPage = hasPasswordField && hasEmailField;
 
     return {
       onLoginPage,
