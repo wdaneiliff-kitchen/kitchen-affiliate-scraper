@@ -1,0 +1,118 @@
+# Scrape affiliate commissions and upload to Google Sheets.
+# Runs on schedule and can be triggered manually.
+#
+# Required GitHub Secrets (Settings → Secrets and variables → Actions):
+#   BIXGROW_EMAIL, BIXGROW_PASSWORD
+#   SOCIALSNOWBALL_EMAIL, SOCIALSNOWBALL_PASSWORD
+#   SHORTLY_EMAIL, SHORTLY_PASSWORD
+#   UPPROMOTE_EMAIL, UPPROMOTE_PASSWORD
+#   UPPROMOTE_LUZZ_BASE_URL, UPPROMOTE_HONOLULU_BASE_URL, UPPROMOTE_DIADEM_BASE_URL
+#   UPPROMOTE_HOLBROOK_BASE_URL, UPPROMOTE_PICKLEBALLAPES_BASE_URL
+#   AFFILIATLY_EMAIL, AFFILIATLY_PASSWORD
+#   GOOGLE_SHEET_ID
+#   GOOGLE_CREDENTIALS_JSON  (entire contents of your Google service account JSON key file)
+#   TWOCAPTCHA_API_KEY  (optional but recommended for unattended uppromote/affiliatly runs)
+#   SLACK_WEBHOOK_URL   (Slack Incoming Webhook URL for job notifications)
+
+name: Scrape and upload commissions
+
+on:
+  schedule:
+    # Daily at 08:00 UTC
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+
+jobs:
+  scrape-and-upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install Chromium dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgbm1 libasound2 libatk-bridge2.0-0 libatk1.0-0 libcups2 \
+            libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 \
+            libxrandr2 libnss3 libnspr4
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Write Google credentials
+        env:
+          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+        run: node -e "require('fs').writeFileSync('credentials.json', process.env.GOOGLE_CREDENTIALS_JSON || '')"
+
+      - name: Scrape and upload
+        id: scrape
+        env:
+          BIXGROW_EMAIL: ${{ secrets.BIXGROW_EMAIL }}
+          BIXGROW_PASSWORD: ${{ secrets.BIXGROW_PASSWORD }}
+          SOCIALSNOWBALL_EMAIL: ${{ secrets.SOCIALSNOWBALL_EMAIL }}
+          SOCIALSNOWBALL_PASSWORD: ${{ secrets.SOCIALSNOWBALL_PASSWORD }}
+          SHORTLY_EMAIL: ${{ secrets.SHORTLY_EMAIL }}
+          SHORTLY_PASSWORD: ${{ secrets.SHORTLY_PASSWORD }}
+          UPPROMOTE_EMAIL: ${{ secrets.UPPROMOTE_EMAIL }}
+          UPPROMOTE_PASSWORD: ${{ secrets.UPPROMOTE_PASSWORD }}
+          UPPROMOTE_LUZZ_BASE_URL: ${{ secrets.UPPROMOTE_LUZZ_BASE_URL }}
+          UPPROMOTE_HONOLULU_BASE_URL: ${{ secrets.UPPROMOTE_HONOLULU_BASE_URL }}
+          UPPROMOTE_DIADEM_BASE_URL: ${{ secrets.UPPROMOTE_DIADEM_BASE_URL }}
+          UPPROMOTE_HOLBROOK_BASE_URL: ${{ secrets.UPPROMOTE_HOLBROOK_BASE_URL }}
+          UPPROMOTE_PICKLEBALLAPES_BASE_URL: ${{ secrets.UPPROMOTE_PICKLEBALLAPES_BASE_URL }}
+          AFFILIATLY_EMAIL: ${{ secrets.AFFILIATLY_EMAIL }}
+          AFFILIATLY_PASSWORD: ${{ secrets.AFFILIATLY_PASSWORD }}
+          TWOCAPTCHA_API_KEY: ${{ secrets.TWOCAPTCHA_API_KEY }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          GOOGLE_CREDENTIALS_PATH: ${{ github.workspace }}/credentials.json
+        run: |
+          pnpm bixgrow && pnpm socialsnowball:all && pnpm shortly && \
+          pnpm uppromote -- --account=luzz && \
+          pnpm uppromote -- --account=honolulu && \
+          pnpm uppromote -- --account=diadem && \
+          pnpm uppromote -- --account=holbrook && \
+          pnpm uppromote -- --account=pickleballapes && \
+          pnpm affiliatly
+
+      - name: Notify Slack
+        if: always() && env.SLACK_WEBHOOK_URL != ''
+        env:
+          SCRAPE_OUTCOME: ${{ steps.scrape.outcome }}
+        run: |
+          if [ "$SCRAPE_OUTCOME" = "success" ]; then
+            EMOJI=":white_check_mark:"
+            TEXT="Scrape and upload completed successfully."
+          else
+            EMOJI=":x:"
+            TEXT="Scrape and upload failed or was cancelled."
+          fi
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          payload=$(cat <<EOF
+          {
+            "blocks": [
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": "${EMOJI} *Scrape and upload commissions*\n${TEXT}\n\n<${RUN_URL}|View run>"
+                }
+              }
+            ]
+          }
+          EOF
+          )
+          curl -s -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK_URL" || true

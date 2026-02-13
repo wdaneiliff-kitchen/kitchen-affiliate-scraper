@@ -1,0 +1,19 @@
+display_information:
+  name: Affiliate scraper
+  description: Notifications for affiliate commission scrape-and-upload runs
+
+features:
+  bot_user:
+    display_name: Affiliate Scraper
+    always_online: false
+
+oauth_config:
+  scopes:
+    bot:
+      - incoming-webhook
+
+settings:
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  is_hosted: false
+  token_rotation_enabled: false

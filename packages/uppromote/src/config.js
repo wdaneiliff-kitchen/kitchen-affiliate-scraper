@@ -18,39 +18,43 @@ export const NETWORK_ID = 'uppromote';
  * Account configurations for different brands
  * Uses environment variables for credentials and URLs
  */
+// Shared credentials for all UpPromote accounts
+const EMAIL = process.env.UPPROMOTE_EMAIL;
+const PASSWORD = process.env.UPPROMOTE_PASSWORD;
+
 export function getAccount(name) {
   const accounts = {
     luzz: {
-      email: process.env.UPPROMOTE_LUZZ_EMAIL,
-      password: process.env.UPPROMOTE_LUZZ_PASSWORD,
-      baseUrl: process.env.UPPROMOTE_LUZZ_BASE_URL,  // e.g., https://af.uppromote.com/010661-db
+      email: EMAIL,
+      password: PASSWORD,
+      baseUrl: process.env.UPPROMOTE_LUZZ_BASE_URL,
       advertiserId: 'luzz',
       advertiserName: 'Luzz',
     },
     honolulu: {
-      email: process.env.UPPROMOTE_HONOLULU_EMAIL,
-      password: process.env.UPPROMOTE_HONOLULU_PASSWORD,
+      email: EMAIL,
+      password: PASSWORD,
       baseUrl: process.env.UPPROMOTE_HONOLULU_BASE_URL,
       advertiserId: 'honolulu',
       advertiserName: 'Honolulu',
     },
     holbrook: {
-      email: process.env.UPPROMOTE_HOLBROOK_EMAIL,
-      password: process.env.UPPROMOTE_HOLBROOK_PASSWORD,
+      email: EMAIL,
+      password: PASSWORD,
       baseUrl: process.env.UPPROMOTE_HOLBROOK_BASE_URL,
       advertiserId: 'holbrook',
       advertiserName: 'Holbrook',
     },
     diadem: {
-      email: process.env.UPPROMOTE_DIADEM_EMAIL,
-      password: process.env.UPPROMOTE_DIADEM_PASSWORD,
+      email: EMAIL,
+      password: PASSWORD,
       baseUrl: process.env.UPPROMOTE_DIADEM_BASE_URL,
       advertiserId: 'diadem',
       advertiserName: 'Diadem',
     },
     pickleballapes: {
-      email: process.env.UPPROMOTE_PICKLEBALLAPES_EMAIL,
-      password: process.env.UPPROMOTE_PICKLEBALLAPES_PASSWORD,
+      email: EMAIL,
+      password: PASSWORD,
       baseUrl: process.env.UPPROMOTE_PICKLEBALLAPES_BASE_URL,
       advertiserId: 'pickleballapes',
       advertiserName: 'Pickleball Apes',

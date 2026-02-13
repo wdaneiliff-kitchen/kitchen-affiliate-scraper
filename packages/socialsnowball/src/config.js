@@ -10,26 +10,30 @@ export const NETWORK_ID = 'socialsnowball';
 
 // Account configurations for different merchants
 // Using a function to read env vars after dotenv has loaded
+// Shared credentials for all SocialSnowball accounts
+const EMAIL = process.env.SOCIALSNOWBALL_EMAIL;
+const PASSWORD = process.env.SOCIALSNOWBALL_PASSWORD;
+
 export function getAccount(name) {
   const accounts = {
     enhance: {
-      email: process.env.SOCIALSNOWBALL_ENHANCE_EMAIL,
-      password: process.env.SOCIALSNOWBALL_ENHANCE_PASSWORD,
+      email: EMAIL,
+      password: PASSWORD,
       merchantName: 'Enhance Pickleball',
       advertiserId: 'enhance',
       advertiserName: 'Enhance Pickleball',
     },
     crbn: {
-      email: process.env.SOCIALSNOWBALL_CRBN_EMAIL,
-      password: process.env.SOCIALSNOWBALL_CRBN_PASSWORD,
-      merchantName: 'CRBN',  // Adjust if dropdown shows different name
+      email: EMAIL,
+      password: PASSWORD,
+      merchantName: 'CRBN',
       advertiserId: 'crbn',
       advertiserName: 'CRBN',
     },
     friday: {
-      email: process.env.SOCIALSNOWBALL_FRIDAY_EMAIL,
-      password: process.env.SOCIALSNOWBALL_FRIDAY_PASSWORD,
-      merchantName: 'Friday',  // Adjust if dropdown shows different name
+      email: EMAIL,
+      password: PASSWORD,
+      merchantName: 'Friday',
       advertiserId: 'friday',
       advertiserName: 'Friday',
     },
