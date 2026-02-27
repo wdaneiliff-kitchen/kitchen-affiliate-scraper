@@ -54,7 +54,7 @@ export async function launchBrowser({ headless = true } = {}) {
   }
 
   const browser = await puppeteer.launch({
-    headless: headless ? 'new' : false,
+    headless,
     executablePath,
     args: [
       '--no-sandbox',

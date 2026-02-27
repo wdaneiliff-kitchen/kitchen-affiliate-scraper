@@ -43,19 +43,6 @@ Refersion uses **reCAPTCHA + email magic link**: enter your email, solve the cap
 
 ---
 
-## RPM (Shopify Collabs)
-
-RPM uses **Shopify Collabs** (creator/affiliate side), not Refersion.
-
-- **Login URL:** <https://www.shopify.com/collabs/creators>
-- **Steps:**
-  1. Open the URL in your browser.
-  2. Log in with your Shopify account (or “Log in” and use the credentials for the creator account that works with RPM).
-  3. After login you’re in the Collabs creator dashboard (“Your content, our commerce”).
-  4. Find the **earnings**, **commissions**, or **payouts** section (wording may vary; check the main nav or account/earnings area).
-  5. Export or copy the data you need (e.g. commission history, payouts) using any export/CSV option the dashboard provides.
----
-
 ## Quick reference
 
 | Network | Platform    | Login URL                                      |
@@ -63,4 +50,3 @@ RPM uses **Shopify Collabs** (creator/affiliate side), not Refersion.
 | Volair  | Refersion   | https://www.refersion.com/affiliate/login       |
 | Gearbox | Refersion   | https://gearbox.refersion.com/affiliate         |
 | ERNE    | Refersion   | https://www.refersion.com/affiliate/login       |
-| RPM     | Shopify Collabs | https://www.shopify.com/collabs/creators    |
