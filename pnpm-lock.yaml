@@ -29,6 +29,15 @@ importers:
         specifier: ^16.3.1
         version: 16.6.1
 
+  packages/goaffpro:
+    dependencies:
+      '@kitchen/shared':
+        specifier: workspace:*
+        version: link:../shared
+      dotenv:
+        specifier: ^16.3.1
+        version: 16.6.1
+
   packages/shared:
     dependencies:
       googleapis:

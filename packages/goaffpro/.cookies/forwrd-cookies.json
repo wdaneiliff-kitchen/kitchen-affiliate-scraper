@@ -1,0 +1,58 @@
+[
+  {
+    "name": "goaffpro_entry_url",
+    "value": "%7B%22url%22%3A%22https%3A%2F%2Fforwrd.goaffpro.com%2F%22%7D",
+    "domain": "forwrd.goaffpro.com",
+    "path": "/",
+    "expires": -1,
+    "size": 78,
+    "httpOnly": false,
+    "secure": false,
+    "session": true,
+    "sameParty": false,
+    "sourceScheme": "Secure",
+    "sourcePort": 443
+  },
+  {
+    "name": "access_token",
+    "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b3RwX3JlcXVpcmVkIjpmYWxzZSwiYWZmaWxpYXRlX2lkIjoxODk5ODQ3MSwiZnJvbV9hZG1pbiI6ZmFsc2UsImlhdCI6MTc3MjIxOTM2MCwiZXhwIjoxNzcyODI0MTYwfQ.Bd_9cVRwMhCl4EcpESVa3IMxAHGI5Ni6OddRflpNUIc",
+    "domain": "forwrd.goaffpro.com",
+    "path": "/",
+    "expires": -1,
+    "size": 227,
+    "httpOnly": false,
+    "secure": false,
+    "session": true,
+    "sameParty": false,
+    "sourceScheme": "Secure",
+    "sourcePort": 443
+  },
+  {
+    "name": "goaffpro_affiliate_profile",
+    "value": "{\"name\":\"Alex Lantz\",\"affiliate_id\":18998471,\"ref_code\":\"eixrxnja\"}",
+    "domain": ".goaffpro.com",
+    "path": "/",
+    "expires": 1774897761.248217,
+    "size": 93,
+    "httpOnly": false,
+    "secure": false,
+    "session": false,
+    "sameParty": false,
+    "sourceScheme": "Secure",
+    "sourcePort": 443
+  },
+  {
+    "name": "affiliateSaleDetailsLimit",
+    "value": "10",
+    "domain": "forwrd.goaffpro.com",
+    "path": "/",
+    "expires": -1,
+    "size": 27,
+    "httpOnly": false,
+    "secure": false,
+    "session": true,
+    "sameParty": false,
+    "sourceScheme": "Secure",
+    "sourcePort": 443
+  }
+]

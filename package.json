@@ -15,7 +15,9 @@
     "uppromote:all:scrape": "pnpm --filter @kitchen/uppromote scrape -- --account=all",
     "shortly": "pnpm --filter @kitchen/shortly start",
     "affiliatly": "pnpm --filter @kitchen/affiliatly start",
-    "affiliatly:scrape": "pnpm --filter @kitchen/affiliatly scrape"
+    "affiliatly:scrape": "pnpm --filter @kitchen/affiliatly scrape",
+    "goaffpro": "pnpm --filter @kitchen/goaffpro start",
+    "goaffpro:scrape": "pnpm --filter @kitchen/goaffpro scrape"
   },
   "packageManager": "pnpm@9.14.2"
 }

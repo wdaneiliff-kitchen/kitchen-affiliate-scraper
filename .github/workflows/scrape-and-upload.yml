@@ -10,6 +10,7 @@
 #   UPPROMOTE_LUZZ_BASE_URL, UPPROMOTE_HONOLULU_BASE_URL, UPPROMOTE_DIADEM_BASE_URL  (optional, have hardcoded defaults)
 #   UPPROMOTE_HOLBROOK_BASE_URL, UPPROMOTE_PICKLEBALLAPES_BASE_URL                 (optional, have hardcoded defaults)
 #   AFFILIATLY_EMAIL, AFFILIATLY_PASSWORD
+#   GOAFFPRO_EMAIL, GOAFFPRO_PASSWORD
 #   GOOGLE_SHEET_ID
 #   GOOGLE_CREDENTIALS_JSON  (entire contents of your Google service account JSON key file)
 #   TWOCAPTCHA_API_KEY  (optional but recommended for unattended uppromote/affiliatly runs)
@@ -61,6 +62,7 @@ jobs:
         with:
           path: |
             packages/affiliatly/.cookies/engage-cookies.json
+            packages/goaffpro/.cookies/forwrd-cookies.json
             packages/uppromote/.cookies/luzz-cookies.json
             packages/uppromote/.cookies/honolulu-cookies.json
             packages/uppromote/.cookies/holbrook-cookies.json
@@ -110,6 +112,8 @@ jobs:
           UPPROMOTE_PICKLEBALLAPES_BASE_URL: ${{ secrets.UPPROMOTE_PICKLEBALLAPES_BASE_URL }}
           AFFILIATLY_EMAIL: ${{ secrets.AFFILIATLY_EMAIL }}
           AFFILIATLY_PASSWORD: ${{ secrets.AFFILIATLY_PASSWORD }}
+          GOAFFPRO_EMAIL: ${{ secrets.GOAFFPRO_EMAIL }}
+          GOAFFPRO_PASSWORD: ${{ secrets.GOAFFPRO_PASSWORD }}
           TWOCAPTCHA_API_KEY: ${{ secrets.TWOCAPTCHA_API_KEY }}
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
           GOOGLE_CREDENTIALS_PATH: ${{ github.workspace }}/credentials.json
@@ -133,6 +137,7 @@ jobs:
           run_scraper "shortly"        pnpm shortly
           run_scraper "uppromote"      pnpm uppromote:all
           run_scraper "affiliatly"     pnpm affiliatly
+          run_scraper "goaffpro"       pnpm goaffpro
 
           if [ -n "$FAILED" ]; then
             echo "failed_scrapers=$FAILED" >> "$GITHUB_OUTPUT"
@@ -179,6 +184,7 @@ jobs:
         with:
           path: |
             packages/affiliatly/.cookies/engage-cookies.json
+            packages/goaffpro/.cookies/forwrd-cookies.json
             packages/uppromote/.cookies/luzz-cookies.json
             packages/uppromote/.cookies/honolulu-cookies.json
             packages/uppromote/.cookies/holbrook-cookies.json
