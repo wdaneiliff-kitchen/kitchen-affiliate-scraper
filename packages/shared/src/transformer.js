@@ -325,7 +325,8 @@ export function toCents(value) {
 
   // Heuristic: if the value looks like dollars (has decimal places or is small),
   // convert to cents. If it's already a large integer, assume it's cents.
-  if (numValue !== Math.floor(numValue) || (numValue > 0 && numValue < 10000)) {
+  const absValue = Math.abs(numValue);
+  if (numValue !== Math.floor(numValue) || (absValue > 0 && absValue < 10000)) {
     return Math.round(numValue * 100);
   }
 
@@ -410,8 +411,8 @@ export function isValidCommissionRecord(record) {
   const hasDate = typeof orderDate === 'string' && orderDate.trim().length > 0;
   const sale = Number(record.sale_amount);
   const commission = Number(record.commission_amount);
-  const hasMoney = (typeof sale === 'number' && !isNaN(sale) && sale > 0) ||
-    (typeof commission === 'number' && !isNaN(commission) && commission > 0);
+  const hasMoney = (typeof sale === 'number' && !isNaN(sale) && sale !== 0) ||
+    (typeof commission === 'number' && !isNaN(commission) && commission !== 0);
   return hasDate && hasMoney;
 }
 

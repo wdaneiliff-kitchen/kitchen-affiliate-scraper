@@ -4,8 +4,6 @@ import {
   launchBrowser,
   createStealthPage,
   setupNetworkInterception,
-  getCookieString,
-  getAuthToken,
 } from '@kitchen/shared/scraper-base';
 
 const LOGIN_URL = 'https://affiliates.socialsnowball.io/affiliate/login';
@@ -37,19 +35,11 @@ export async function scrapePayouts({ email, password, merchantName, headless = 
 
   const page = await createStealthPage(browser);
 
-  // Store intercepted API responses and auth token
   const apiResponses = [];
-  let authToken = null;
 
   // Set up network interception
   await setupNetworkInterception(page, {
-    onApiResponse: ({ url, data }) => {
-      // Capture auth token from various possible locations
-      if (data.token || data.access_token || data.accessToken) {
-        authToken = data.token || data.access_token || data.accessToken;
-        console.log(`  └─ 🔑 Captured auth token`);
-      }
-
+    onApiResponse: ({ url, data, response }) => {
       // Try to identify payout/commission data responses
       let records = null;
 
@@ -74,8 +64,10 @@ export async function scrapePayouts({ email, password, merchantName, headless = 
       const urlLower = url.toLowerCase();
       const isPayoutEndpoint =
         urlLower.includes('payouts/pending') ||
+        urlLower.includes('payouts/unpaid') ||
         urlLower.includes('payouts/paid') ||
         urlLower.includes('search-payables') ||
+        urlLower.includes('search-payouts') ||
         urlLower.includes('payables');
 
       // Exclude notification endpoints
@@ -83,8 +75,9 @@ export async function scrapePayouts({ email, password, merchantName, headless = 
 
       // Capture payout endpoint responses (even empty ones - means no pending payouts)
       if (records && isPayoutEndpoint && !isExcluded) {
+        const requestHeaders = response.request().headers();
         console.log(`  └─ 💾 CAPTURED: ${records.length} records from ${url.split('?')[0]}`);
-        apiResponses.push({ url, data, records });
+        apiResponses.push({ url, data, records, requestHeaders });
       }
     },
   });
@@ -295,16 +288,10 @@ export async function scrapePayouts({ email, password, merchantName, headless = 
       }
     }
 
-    // Get auth token from localStorage if not captured
-    if (!authToken) {
-      authToken = await getAuthToken(page);
-    }
-
-    // Try to fetch more data via pagination if we have an auth token
-    // Pass the already-flattened payouts so we don't lose individual records
-    if (authToken || apiResponses.length > 0) {
+    // Paginate all captured endpoints to fetch remaining pages
+    if (apiResponses.length > 0) {
       console.log('\n📄 Attempting to fetch all pages...');
-      const additionalPayouts = await fetchAllPayouts(page, authToken, apiResponses, payouts);
+      const additionalPayouts = await fetchAllPayouts(apiResponses, payouts);
       if (additionalPayouts.length > payouts.length) {
         payouts = additionalPayouts;
       }
@@ -355,65 +342,57 @@ export async function scrapePayouts({ email, password, merchantName, headless = 
 }
 
 /**
- * Attempts to fetch all payout records by paginating through the API
- * This is a discovery function - it will try to find the API endpoint pattern
+ * Paginates all captured API endpoints and returns the combined records.
+ * Groups captured responses by base URL so both unpaid and paid endpoints
+ * are paginated independently. Paginated records are run through
+ * extractFromApiResponses for consistent flattening and status tagging.
+ *
+ * Replays the exact request headers captured from the browser's original
+ * API calls so auth tokens / CSRF headers are included.
+ *
  * @param {Array} existingPayouts - Already-processed (flattened) payouts to start with
  */
-async function fetchAllPayouts(page, authToken, capturedResponses, existingPayouts = []) {
-  // Start with already-flattened payouts (preserves individual records from grouped payouts)
+async function fetchAllPayouts(capturedResponses, existingPayouts = []) {
   const allRecords = [...existingPayouts];
 
-  // If we captured API responses, try pagination
-  if (capturedResponses.length > 0) {
-    // Use the first response for pagination pattern detection
-    const { url, records } = capturedResponses[0];
+  if (capturedResponses.length === 0) return allRecords;
 
-    // Try to extract the base API URL and pagination pattern
-    const baseUrl = url.split('?')[0];
-    console.log(`   📡 Detected API endpoint: ${baseUrl}`);
+  // Deduplicate endpoints by base URL, keeping the original URL and headers.
+  // Strip HTTP/2 pseudo-headers (e.g. :authority, :method) which are invalid
+  // for Node.js fetch.
+  const endpointMap = new Map();
+  for (const resp of capturedResponses) {
+    const baseUrl = resp.url.split('?')[0];
+    if (!endpointMap.has(baseUrl)) {
+      const headers = Object.fromEntries(
+        Object.entries(resp.requestHeaders || {}).filter(([k]) => !k.startsWith(':'))
+      );
+      endpointMap.set(baseUrl, { originalUrl: resp.url, headers });
+    }
+  }
 
-    // Try fetching more pages
-    const cookieString = await getCookieString(page);
+  for (const [baseUrl, { originalUrl, headers }] of endpointMap) {
+    console.log(`   📡 Paginating endpoint: ${baseUrl}`);
     let currentPage = 2;
     let hasMore = true;
 
-    while (hasMore && currentPage <= 50) {  // Safety limit
+    while (hasMore && currentPage <= 50) {
       try {
-        const paginatedUrl = `${baseUrl}?page=${currentPage}`;
-
-        const headers = {
-          'Accept': 'application/json',
-          'Cookie': cookieString,
-          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-        };
-
-        if (authToken) {
-          headers['Authorization'] = `Bearer ${authToken}`;
-        }
-
-        const res = await fetch(paginatedUrl, { headers });
+        const paginatedUrl = new URL(originalUrl);
+        paginatedUrl.searchParams.set('page', currentPage.toString());
+        const res = await fetch(paginatedUrl.toString(), { headers });
 
         if (!res.ok) {
-          console.log(`   ⚠️ Page ${currentPage} returned ${res.status}, stopping pagination`);
+          console.log(`   ⚠️ Page ${currentPage} returned ${res.status}, stopping pagination for ${baseUrl}`);
           break;
         }
 
         const data = await res.json();
-
-        // Extract records from response
-        let pageRecords = null;
-        if (data.data?.data && Array.isArray(data.data.data)) {
-          pageRecords = data.data.data;
-        } else if (Array.isArray(data.data)) {
-          pageRecords = data.data;
-        } else if (data.payouts && Array.isArray(data.payouts)) {
-          pageRecords = data.payouts;
-        } else if (Array.isArray(data)) {
-          pageRecords = data;
-        }
+        const pageRecords = extractRecordsFromResponse(data);
 
         if (pageRecords && pageRecords.length > 0) {
-          allRecords.push(...pageRecords);
+          const processed = extractFromApiResponses([{ url: originalUrl, records: pageRecords }]);
+          allRecords.push(...processed);
           console.log(`   📄 Page ${currentPage}: ${pageRecords.length} records (${allRecords.length} total)`);
           currentPage++;
         } else {
@@ -430,8 +409,24 @@ async function fetchAllPayouts(page, authToken, capturedResponses, existingPayou
 }
 
 /**
- * Extracts payout data from intercepted API responses
+ * Extracts the record array from a SocialSnowball API response,
+ * handling the various response envelope formats.
+ */
+function extractRecordsFromResponse(data) {
+  if (data.payload && Array.isArray(data.payload)) return data.payload;
+  if (data.data?.data && Array.isArray(data.data.data)) return data.data.data;
+  if (Array.isArray(data.data)) return data.data;
+  if (data.payouts && Array.isArray(data.payouts)) return data.payouts;
+  if (data.commissions && Array.isArray(data.commissions)) return data.commissions;
+  if (Array.isArray(data)) return data;
+  return null;
+}
+
+/**
+ * Extracts payout data from intercepted API responses.
  * - Tags records from paid endpoint with _status: 'paid'
+ * - Tags records from unpaid endpoint with _status: 'unpaid'
+ *   (transformer normalizes 'unpaid' → 'approved')
  * - Flattens grouped payouts into individual order records
  */
 function extractFromApiResponses(apiResponses) {
@@ -439,26 +434,30 @@ function extractFromApiResponses(apiResponses) {
 
   for (const { url, records } of apiResponses) {
     if (records && Array.isArray(records)) {
-      // Check if this is from the paid endpoint
-      const isPaidEndpoint = url.toLowerCase().includes('payouts/paid');
+      const urlLower = url.toLowerCase();
+      const isPaidEndpoint = urlLower.includes('payouts/paid') || urlLower.includes('search-payouts');
+      const isUnpaidEndpoint = urlLower.includes('payouts/unpaid') || urlLower.includes('search-payables');
+
+      function resolveStatus(record) {
+        if (isPaidEndpoint) return 'paid';
+        if (isUnpaidEndpoint) return 'unpaid';
+        return record.status || record.payout_status;
+      }
 
       for (const record of records) {
-        // Check if this is a grouped payout with individual orders
         if (record.is_grouped && record.group && Array.isArray(record.group) && record.group.length > 0) {
-          // Flatten: extract each individual order from the group
           console.log(`  └─ 📦 Flattening grouped payout: ${record.group.length} individual orders`);
           for (const order of record.group) {
             payouts.push({
               ...order,
-              _status: isPaidEndpoint ? 'paid' : order.status || order.payout_status,
-              _parent_payout_date: record.payout_date,  // Keep reference to parent payout date
+              _status: resolveStatus(order),
+              _parent_payout_date: record.payout_date,
             });
           }
         } else {
-          // Regular non-grouped record
           payouts.push({
             ...record,
-            _status: isPaidEndpoint ? 'paid' : record.status || record.payout_status,
+            _status: resolveStatus(record),
           });
         }
       }
