@@ -454,6 +454,11 @@ function extractFromApiResponses(apiResponses) {
               _parent_payout_date: record.payout_date,
             });
           }
+        } else if (!record.source_item_external_id && isPaidEndpoint) {
+          // Paid endpoint (search-payouts) returns aggregated payout batches,
+          // not individual orders. These lack source_item_external_id and
+          // bundle multiple orders into a single summed amount.
+          console.log(`  └─ ⏭️  Skipping aggregated payout batch: id=${record.id} amount=${record.amount?.value} revenue=${record.associated_revenue?.value}`);
         } else {
           payouts.push({
             ...record,
