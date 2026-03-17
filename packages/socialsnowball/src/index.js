@@ -9,7 +9,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: resolve(__dirname, '../../../.env') });
 import { scrapePayouts, debugPageStructure } from './scraper.js';
 import { createTransformer } from '@kitchen/shared/transformer';
-import { uploadToSheets, validateAccess, getServiceAccountEmail, createSpreadsheet } from '@kitchen/shared/sheets';
+import { uploadToSheets, validateAccess, getServiceAccountEmail, createSpreadsheet, removeRows, readSheetRows } from '@kitchen/shared/sheets';
 import { writeFile } from 'fs/promises';
 import { FIELD_MAPPINGS, STATUS_MAPPINGS, getAccount, ACCOUNT_NAMES, DEFAULT_ACCOUNT, extractProductTitle, extractCommissionAmount, extractSaleAmount, extractCurrency } from './config.js';
 
@@ -47,6 +47,12 @@ async function main() {
   // Parse --account=name argument
   const accountArg = args.find(a => a.startsWith('--account='));
   const accountName = accountArg ? accountArg.split('=')[1] : DEFAULT_ACCOUNT;
+
+  // Handle --cleanup-aggregated: remove aggregated payout batch rows from the sheet
+  if (args.includes('--cleanup-aggregated')) {
+    await cleanupAggregatedRows(args);
+    return;
+  }
 
   // Handle --account=all to process all accounts
   if (accountName === 'all') {
@@ -222,6 +228,76 @@ async function processAccount(accountName, args) {
   console.log('═══════════════════════════════════════════════════════════\n');
 
   return { records: records.length, uploaded: result.uploaded, skipped: result.skipped };
+}
+
+/**
+ * Removes aggregated payout batch rows from the Google Sheet.
+ *
+ * Uses --account= to scope which advertiser(s) to clean up.
+ * For Friday: all numeric-ID rows are aggregated batches (individual
+ *   orders always get gen_ IDs and the paid endpoint only returns batches).
+ * For CRBN: numeric-ID rows from the paid endpoint may be legitimate
+ *   individual orders — only removes rows whose amounts are exact sums
+ *   of existing gen_ rows (true aggregated batches).
+ *
+ * Run with: node src/index.js --cleanup-aggregated --account=friday [--dry-run]
+ */
+async function cleanupAggregatedRows(args) {
+  const dryRun = args.includes('--dry-run');
+  const credentialsPath = process.env.GOOGLE_CREDENTIALS_PATH || resolve(__dirname, '../../../credentials.json');
+  const spreadsheetId = process.env.GOOGLE_SHEET_ID;
+  const sheetName = process.env.SHEET_NAME || 'Comissions';
+
+  if (!spreadsheetId) {
+    console.error('❌ GOOGLE_SHEET_ID not set');
+    process.exit(1);
+  }
+
+  const accountArg = args.find(a => a.startsWith('--account='));
+  const accountFilter = accountArg ? accountArg.split('=')[1] : null;
+  const targetIds = accountFilter && accountFilter !== 'all'
+    ? new Set(accountFilter.split(','))
+    : new Set(ACCOUNT_NAMES);
+
+  for (const id of targetIds) {
+    if (!ACCOUNT_NAMES.includes(id)) {
+      console.error(`❌ Unknown account: ${id}. Available: ${ACCOUNT_NAMES.join(', ')}`);
+      process.exit(1);
+    }
+  }
+
+  console.log('═══════════════════════════════════════════════════════════');
+  console.log('  Cleanup: Remove aggregated payout batch rows');
+  console.log(`  Accounts: ${[...targetIds].join(', ')}`);
+  console.log(`  ${dryRun ? '🔍 DRY RUN (no changes)' : '⚠️  LIVE — rows will be deleted'}`);
+  console.log('═══════════════════════════════════════════════════════════\n');
+
+  const predicate = (row) => {
+    if (!targetIds.has(row.advertiser_id)) return false;
+    const txId = row.transaction_id || '';
+    if (txId.startsWith('gen_')) return false;
+    if (!/^\d+$/.test(txId)) return false;
+    const orderRef = (row.order_ref || '').trim();
+    if (orderRef) return false;
+    return true;
+  };
+
+  if (dryRun) {
+    const { rows } = await readSheetRows({ spreadsheetId, credentialsPath, sheetName });
+    if (rows.length === 0) { console.log('Sheet is empty.'); return; }
+    let count = 0;
+    for (const row of rows) {
+      if (predicate(row)) {
+        count++;
+        console.log(`  🗑️  Row ${row._rowIndex + 1}: tx=${row.transaction_id} adv=${row.advertiser_id} sale=${row.sale_amount} comm=${row.commission_amount}`);
+      }
+    }
+    console.log(`\n${count} rows would be removed. Run without --dry-run to delete.`);
+    return;
+  }
+
+  const result = await removeRows({ spreadsheetId, credentialsPath, sheetName, predicate });
+  console.log(`\n✅ Removed ${result.removed} aggregated rows. ${result.remaining} rows remaining.`);
 }
 
 function validateConfig({ scrapeOnly, uploadOnly, createSheet, account }) {

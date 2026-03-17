@@ -7,6 +7,11 @@
  * - Holbrook
  * - Diadem
  * - Pickleball Apes
+ * - UDrippin
+ * - 11six24
+ * - Vatic
+ * - Gruvn
+ * - Six Zero
  *
  * Each brand has its own UpPromote shop URL and credentials.
  */
@@ -35,6 +40,11 @@ const ACCOUNT_BASE_URLS = {
   holbrook: 'https://ambassadors.holbrookpickleball.com/holbrookpickleball',
   diadem: 'https://af.uppromote.com/diademsports',
   pickleballapes: 'https://af.uppromote.com/pickleballapes',
+  udrippin: 'https://af.uppromote.com/Udrippin',
+  '11six24': 'https://af.uppromote.com/11six24-pickleball',
+  vatic: 'https://af.uppromote.com/vatic-pro',
+  gruvn: 'https://af.uppromote.com/gruvn',
+  sixzero: 'https://af.uppromote.com/six-zero-7668',
 };
 
 function resolveBaseUrl(accountName) {
@@ -79,11 +89,46 @@ export function getAccount(name) {
       advertiserId: 'pickleballapes',
       advertiserName: 'Pickleball Apes',
     },
+    udrippin: {
+      email: resolveCredential('udrippin', 'EMAIL'),
+      password: resolveCredential('udrippin', 'PASSWORD'),
+      baseUrl: resolveBaseUrl('udrippin'),
+      advertiserId: 'udrippin',
+      advertiserName: 'UDrippin',
+    },
+    '11six24': {
+      email: resolveCredential('11six24', 'EMAIL'),
+      password: resolveCredential('11six24', 'PASSWORD'),
+      baseUrl: resolveBaseUrl('11six24'),
+      advertiserId: '11six24',
+      advertiserName: '11six24',
+    },
+    vatic: {
+      email: resolveCredential('vatic', 'EMAIL'),
+      password: resolveCredential('vatic', 'PASSWORD'),
+      baseUrl: resolveBaseUrl('vatic'),
+      advertiserId: 'vatic',
+      advertiserName: 'Vatic',
+    },
+    gruvn: {
+      email: resolveCredential('gruvn', 'EMAIL'),
+      password: resolveCredential('gruvn', 'PASSWORD'),
+      baseUrl: resolveBaseUrl('gruvn'),
+      advertiserId: 'gruvn',
+      advertiserName: 'Gruvn',
+    },
+    sixzero: {
+      email: resolveCredential('sixzero', 'EMAIL'),
+      password: resolveCredential('sixzero', 'PASSWORD'),
+      baseUrl: resolveBaseUrl('sixzero'),
+      advertiserId: 'sixzero',
+      advertiserName: 'Six Zero',
+    },
   };
   return accounts[name];
 }
 
-export const ACCOUNT_NAMES = ['luzz', 'honolulu', 'holbrook', 'diadem', 'pickleballapes'];
+export const ACCOUNT_NAMES = ['luzz', 'honolulu', 'holbrook', 'diadem', 'pickleballapes', 'udrippin', '11six24', 'vatic', 'gruvn', 'sixzero'];
 
 // Default account
 export const DEFAULT_ACCOUNT = 'luzz';

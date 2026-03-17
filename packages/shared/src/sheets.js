@@ -246,6 +246,98 @@ export async function validateAccess({ credentialsPath, spreadsheetId }) {
 }
 
 /**
+ * Removes rows from a Google Sheet that match a predicate.
+ * Reads the sheet, identifies matching rows by their 0-based row index,
+ * then deletes them bottom-to-top so indices stay stable.
+ *
+ * @param {Object} options
+ * @param {string} options.spreadsheetId
+ * @param {string} options.credentialsPath
+ * @param {string} [options.sheetName='Comissions']
+ * @param {Function} options.predicate - (rowObject, rowIndex) => boolean.
+ *   rowObject has keys from the header row.
+ * @returns {Promise<{removed: number, remaining: number}>}
+ */
+export async function removeRows({
+  spreadsheetId,
+  credentialsPath,
+  sheetName = 'Comissions',
+  predicate,
+}) {
+  const sheets = await getAuthenticatedClient(credentialsPath);
+  const range = `${sheetName}!A:V`;
+
+  const existing = await sheets.spreadsheets.values.get({ spreadsheetId, range });
+  const rows = existing.data.values || [];
+  if (rows.length < 2) return { removed: 0, remaining: 0 };
+
+  const headers = rows[0];
+
+  // Resolve the numeric sheetId (tab id) needed by deleteDimension
+  const meta = await sheets.spreadsheets.get({ spreadsheetId });
+  const sheetMeta = meta.data.sheets.find(
+    s => s.properties.title === sheetName
+  );
+  if (!sheetMeta) throw new Error(`Sheet tab "${sheetName}" not found`);
+  const sheetId = sheetMeta.properties.sheetId;
+
+  const rowIndicesToRemove = [];
+  for (let i = 1; i < rows.length; i++) {
+    const obj = {};
+    headers.forEach((h, idx) => { obj[h] = rows[i]?.[idx] ?? ''; });
+    if (predicate(obj, i)) {
+      rowIndicesToRemove.push(i);
+    }
+  }
+
+  if (rowIndicesToRemove.length === 0) {
+    return { removed: 0, remaining: rows.length - 1 };
+  }
+
+  // Delete bottom-to-top to keep indices stable
+  const requests = rowIndicesToRemove
+    .sort((a, b) => b - a)
+    .map(idx => ({
+      deleteDimension: {
+        range: { sheetId, dimension: 'ROWS', startIndex: idx, endIndex: idx + 1 },
+      },
+    }));
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: { requests },
+  });
+
+  console.log(`🗑️  Removed ${rowIndicesToRemove.length} rows from "${sheetName}"`);
+  return { removed: rowIndicesToRemove.length, remaining: rows.length - 1 - rowIndicesToRemove.length };
+}
+
+/**
+ * Reads all rows from a sheet and returns them as an array of objects
+ * keyed by the header row.
+ *
+ * @param {Object} options
+ * @param {string} options.spreadsheetId
+ * @param {string} options.credentialsPath
+ * @param {string} [options.sheetName='Comissions']
+ * @returns {Promise<{headers: string[], rows: Object[]}>}
+ */
+export async function readSheetRows({ spreadsheetId, credentialsPath, sheetName = 'Comissions' }) {
+  const sheets = await getAuthenticatedClient(credentialsPath);
+  const range = `${sheetName}!A:V`;
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range });
+  const raw = res.data.values || [];
+  if (raw.length < 2) return { headers: raw[0] || [], rows: [] };
+  const headers = raw[0];
+  const rows = raw.slice(1).map((r, i) => {
+    const obj = { _rowIndex: i + 1 };
+    headers.forEach((h, idx) => { obj[h] = r?.[idx] ?? ''; });
+    return obj;
+  });
+  return { headers, rows };
+}
+
+/**
  * Gets the service account email from credentials
  * @param {string} credentialsPath - Path to service account JSON
  * @returns {Promise<string>} Service account email
