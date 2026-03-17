@@ -423,11 +423,44 @@ function extractRecordsFromResponse(data) {
 }
 
 /**
+ * Detects whether a URL points to a "paid payouts" endpoint.
+ * Checks both path segments (e.g. /payouts/paid) and query params
+ * (e.g. ?status=paid) to handle all SocialSnowball API URL patterns.
+ */
+function looksLikePaidEndpoint(url) {
+  const lower = url.toLowerCase();
+  if (lower.includes('payouts/paid') || lower.includes('search-payouts')) return true;
+  try {
+    const parsed = new URL(url);
+    const status = parsed.searchParams.get('status') || parsed.searchParams.get('type');
+    if (status && status.toLowerCase() === 'paid') return true;
+  } catch { /* not a valid URL, fall through */ }
+  return false;
+}
+
+/**
+ * Returns true if a raw API record looks like an aggregated payout batch
+ * rather than an individual order. Aggregated batches bundle multiple
+ * orders into one summed amount and lack individual order identifiers.
+ */
+function isAggregatedBatch(record) {
+  if (record.is_grouped) return true;
+  if (!record.source_item_external_id && !record.source_item_external_created_at) {
+    const hasAggregatedShape =
+      (record.amount?.value !== undefined && record.associated_revenue?.value !== undefined) ||
+      record.payout_date !== undefined;
+    if (hasAggregatedShape) return true;
+  }
+  return false;
+}
+
+/**
  * Extracts payout data from intercepted API responses.
  * - Tags records from paid endpoint with _status: 'paid'
  * - Tags records from unpaid endpoint with _status: 'unpaid'
  *   (transformer normalizes 'unpaid' → 'approved')
  * - Flattens grouped payouts into individual order records
+ * - Skips aggregated payout batches that bundle multiple orders
  */
 function extractFromApiResponses(apiResponses) {
   const payouts = [];
@@ -435,7 +468,7 @@ function extractFromApiResponses(apiResponses) {
   for (const { url, records } of apiResponses) {
     if (records && Array.isArray(records)) {
       const urlLower = url.toLowerCase();
-      const isPaidEndpoint = urlLower.includes('payouts/paid') || urlLower.includes('search-payouts');
+      const isPaidEndpoint = looksLikePaidEndpoint(url);
       const isUnpaidEndpoint = urlLower.includes('payouts/unpaid') || urlLower.includes('search-payables');
 
       function resolveStatus(record) {
@@ -454,11 +487,10 @@ function extractFromApiResponses(apiResponses) {
               _parent_payout_date: record.payout_date,
             });
           }
-        } else if (!record.source_item_external_id && isPaidEndpoint) {
-          // Paid endpoint (search-payouts) returns aggregated payout batches,
-          // not individual orders. These lack source_item_external_id and
-          // bundle multiple orders into a single summed amount.
+        } else if (isPaidEndpoint && isAggregatedBatch(record)) {
           console.log(`  └─ ⏭️  Skipping aggregated payout batch: id=${record.id} amount=${record.amount?.value} revenue=${record.associated_revenue?.value}`);
+        } else if (!isPaidEndpoint && !isUnpaidEndpoint && isAggregatedBatch(record)) {
+          console.log(`  └─ ⏭️  Skipping aggregated payout batch (unknown endpoint): id=${record.id}`);
         } else {
           payouts.push({
             ...record,
