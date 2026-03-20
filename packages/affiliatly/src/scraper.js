@@ -357,12 +357,11 @@ export async function scrapeCommissions({ email, password, accountId = 'engage',
     await page.screenshot({ path: 'affiliatly-dashboard.png', fullPage: true });
     console.log('   📸 Saved debug screenshot: affiliatly-dashboard.png');
 
-    // Step 6: Try to load all records (pagination / "show all")
-    await tryLoadAllRecords(page);
+    // Step 6: Try "show all" first, then extract with pagination fallback
+    await tryShowAllRecords(page);
 
-    // Step 7: Extract data from DOM
-    console.log('📄 Extracting commission data from page...');
-    let commissions = await extractFromDOM(page);
+    console.log('📄 Extracting commission data...');
+    let commissions = await extractAllPages(page);
 
     if (commissions.length === 0) {
       console.log('⚠️ No data found on current page. Dumping page info for debugging...');
@@ -679,12 +678,12 @@ async function setDateFilter(page) {
 }
 
 /**
- * Attempts to load all records by clicking "show all", pagination, or adjusting rows per page
+ * Attempts to load all records via "show all" or rows-per-page adjustment.
+ * Returns true if all records are now visible on a single page (no pagination needed).
  */
-async function tryLoadAllRecords(page) {
-  console.log('📄 Attempting to load all records...');
+async function tryShowAllRecords(page) {
+  console.log('📄 Attempting to show all records on one page...');
 
-  // Try clicking "Show All" or adjusting rows per page
   const loadAllResult = await page.evaluate(() => {
     const allButtons = Array.from(document.querySelectorAll('a, button, select option'));
     const showAll = allButtons.find(el => {
@@ -722,14 +721,30 @@ async function tryLoadAllRecords(page) {
   if (loadAllResult.action !== 'none') {
     console.log(`   ✅ ${loadAllResult.action}: ${loadAllResult.value || loadAllResult.text}`);
     await sleep(3000);
+    return true;
   }
 
-  // Paginate through all pages if there's pagination
-  let pageNum = 1;
-  let hasMore = true;
+  return false;
+}
 
+/**
+ * Extracts records from the current page, then paginates through all remaining
+ * pages, accumulating records from each one.
+ *
+ * @param {import('puppeteer').Page} page - Puppeteer page
+ * @returns {Promise<Array>} All records across every page
+ */
+async function extractAllPages(page) {
+  const allRecords = [];
+  let pageNum = 1;
+
+  // Extract from the first (current) page
+  let records = await extractFromDOM(page);
+  allRecords.push(...records);
+  console.log(`   📄 Page ${pageNum}: ${records.length} records`);
+
+  let hasMore = true;
   while (hasMore && pageNum < 50) {
-    // Snapshot current page content so we can detect if clicking "next" actually moved us
     const beforeHash = await page.evaluate(() => document.body.innerText.length + '|' + document.body.innerText.slice(0, 500));
 
     const nextResult = await page.evaluate(() => {
@@ -748,7 +763,6 @@ async function tryLoadAllRecords(page) {
         } catch (e) {}
       }
 
-      // Only match explicit "next" text — avoid ambiguous single-char like › or »
       const links = Array.from(document.querySelectorAll('a'));
       const nextLink = links.find(a => {
         const text = a.textContent.trim().toLowerCase();
@@ -764,26 +778,32 @@ async function tryLoadAllRecords(page) {
       return { found: false };
     });
 
-    if (nextResult.found) {
-      pageNum++;
-      console.log(`   📄 Loading page ${pageNum}...`);
-      await sleep(2000);
-      await page.waitForNetworkIdle({ timeout: 10000 }).catch(() => {});
-
-      // Check if the page actually changed — if not, we've looped back to the same page
-      const afterHash = await page.evaluate(() => document.body.innerText.length + '|' + document.body.innerText.slice(0, 500));
-      if (afterHash === beforeHash) {
-        console.log(`   ℹ️ Page content unchanged — no more pages.`);
-        hasMore = false;
-      }
-    } else {
+    if (!nextResult.found) {
       hasMore = false;
+      break;
     }
+
+    pageNum++;
+    await sleep(2000);
+    await page.waitForNetworkIdle({ timeout: 10000 }).catch(() => {});
+
+    const afterHash = await page.evaluate(() => document.body.innerText.length + '|' + document.body.innerText.slice(0, 500));
+    if (afterHash === beforeHash) {
+      console.log(`   ℹ️ Page content unchanged — no more pages.`);
+      hasMore = false;
+      break;
+    }
+
+    records = await extractFromDOM(page);
+    allRecords.push(...records);
+    console.log(`   📄 Page ${pageNum}: ${records.length} records`);
   }
 
   if (pageNum > 1) {
-    console.log(`   ✅ Loaded ${pageNum} pages of data`);
+    console.log(`   ✅ Collected records from ${pageNum} pages`);
   }
+
+  return allRecords;
 }
 
 /**
