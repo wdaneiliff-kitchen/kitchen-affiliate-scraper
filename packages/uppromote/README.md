@@ -4,20 +4,24 @@ Scrapes commission/transaction data from UpPromote affiliate dashboard and uploa
 
 ## Supported Brands
 
-- **Luzz** (default) - Pickleball paddles
+- **Luzz** (default)
 - **Honolulu**
 - **Holbrook**
 - **Diadem**
 - **Pickleball Apes**
+- **UDrippin**
+- **11six24**
+- **Vatic**
+- **Gruvn**
+- **Six Zero**
 
 ### Quick start: LUZZ
 
 To try the scraper with LUZZ, set these in `.env` at the monorepo root:
 
 ```env
-UPPROMOTE_LUZZ_EMAIL=your-luzz-affiliate-email@example.com
-UPPROMOTE_LUZZ_PASSWORD=your-password
-UPPROMOTE_LUZZ_BASE_URL=https://af.uppromote.com/YOUR-SHOP-ID
+UPPROMOTE_EMAIL=your-affiliate-email@example.com
+UPPROMOTE_PASSWORD=your-password
 TWOCAPTCHA_API_KEY=your-2captcha-key   # Optional: auto-solve reCAPTCHA on login
 GOOGLE_SHEET_ID=your-spreadsheet-id
 ```
@@ -65,39 +69,26 @@ pnpm install
 Create a `.env` file in the monorepo root with credentials for each brand:
 
 ```env
-# UpPromote - Luzz (default brand)
-UPPROMOTE_LUZZ_EMAIL=your-email@example.com
-UPPROMOTE_LUZZ_PASSWORD=your-password
-UPPROMOTE_LUZZ_BASE_URL=https://af.uppromote.com/010661-db
+# Shared fallback credentials (used when per-account vars aren't set)
+UPPROMOTE_EMAIL=your-email@example.com
+UPPROMOTE_PASSWORD=your-password
 
-# Optional: 2Captcha for auto-solving reCAPTCHA on login (all UpPromote accounts)
+# Per-account credential overrides (only needed when they differ from shared)
+# UPPROMOTE_LUZZ_EMAIL=different-email@example.com
+# UPPROMOTE_UDRIPPIN_EMAIL=different-email@example.com
+# UPPROMOTE_UDRIPPIN_PASSWORD=different-password
+# UPPROMOTE_GRUVN_EMAIL=different-email@example.com
+# UPPROMOTE_GRUVN_PASSWORD=different-password
+# UPPROMOTE_SIXZERO_EMAIL=different-email@example.com
+
+# Optional: 2Captcha for auto-solving reCAPTCHA on login
 # TWOCAPTCHA_API_KEY=your-2captcha-api-key
-
-# UpPromote - Honolulu
-UPPROMOTE_HONOLULU_EMAIL=your-email@example.com
-UPPROMOTE_HONOLULU_PASSWORD=your-password
-UPPROMOTE_HONOLULU_BASE_URL=https://af.uppromote.com/honolulu-shop-id
-
-# UpPromote - Holbrook
-UPPROMOTE_HOLBROOK_EMAIL=your-email@example.com
-UPPROMOTE_HOLBROOK_PASSWORD=your-password
-UPPROMOTE_HOLBROOK_BASE_URL=https://ambassadors.holbrookpickleball.com/holbrookpickleball
-
-# UpPromote - Diadem
-UPPROMOTE_DIADEM_EMAIL=your-email@example.com
-UPPROMOTE_DIADEM_PASSWORD=your-password
-UPPROMOTE_DIADEM_BASE_URL=https://af.uppromote.com/diadem-shop-id
-
-# UpPromote - Pickleball Apes
-UPPROMOTE_PICKLEBALLAPES_EMAIL=your-email@example.com
-UPPROMOTE_PICKLEBALLAPES_PASSWORD=your-password
-UPPROMOTE_PICKLEBALLAPES_BASE_URL=https://af.uppromote.com/pickleballapes
 
 # Google Sheets
 GOOGLE_SHEET_ID=your-spreadsheet-id
 ```
 
-**Note:** The `UPPROMOTE_*_BASE_URL` should be the base URL of each brand's UpPromote affiliate portal, without the `/commission` path. You can find this by logging into the UpPromote account and copying the URL up to and including the shop ID.
+**Note:** Base URLs are hardcoded in `src/config.js` so `UPPROMOTE_*_BASE_URL` env vars are only needed if you want to override them. Credentials fall back to the shared `UPPROMOTE_EMAIL`/`UPPROMOTE_PASSWORD` when per-account vars aren't set.
 
 ### 3. Configure Google Cloud
 
@@ -120,6 +111,11 @@ pnpm uppromote -- --account=honolulu
 pnpm uppromote -- --account=holbrook
 pnpm uppromote -- --account=diadem
 pnpm uppromote -- --account=pickleballapes
+pnpm uppromote -- --account=udrippin
+pnpm uppromote -- --account=11six24
+pnpm uppromote -- --account=vatic
+pnpm uppromote -- --account=gruvn
+pnpm uppromote -- --account=sixzero
 
 # Scrape + upload ALL brands
 pnpm uppromote:all
@@ -141,6 +137,11 @@ node src/index.js --account=honolulu
 node src/index.js --account=holbrook
 node src/index.js --account=diadem
 node src/index.js --account=pickleballapes
+node src/index.js --account=udrippin
+node src/index.js --account=11six24
+node src/index.js --account=vatic
+node src/index.js --account=gruvn
+node src/index.js --account=sixzero
 
 # All accounts
 node src/index.js --account=all
@@ -170,7 +171,7 @@ node src/index.js --create-sheet
 | Column | Required | Format | Description |
 |--------|----------|--------|-------------|
 | transaction_id | Yes | Integer | Unique UpPromote referral ID |
-| advertiser_id | Yes | String | Brand slug (luzz, honolulu, holbrook, diadem, pickleballapes) |
+| advertiser_id | Yes | String | Brand slug (luzz, honolulu, holbrook, diadem, pickleballapes, udrippin, 11six24, vatic, gruvn, sixzero) |
 | advertiser_name | Yes | String | Brand display name |
 | order_date | Yes | Y-m-d H:i:s | Order creation timestamp |
 | currency_id | Yes | ISO 4217 | 3-letter code (USD, EUR, etc.) |
@@ -216,21 +217,31 @@ Based on the UpPromote dashboard, the following fields are available:
 
 ### Adding a New Brand
 
-1. Add the account config to `src/config.js`:
+1. Add the base URL to `ACCOUNT_BASE_URLS` in `src/config.js`:
+
+```js
+newbrand: 'https://af.uppromote.com/newbrand-shop-id',
+```
+
+2. Add the account entry to `getAccount()` in `src/config.js`:
 
 ```js
 newbrand: {
-  email: process.env.UPPROMOTE_NEWBRAND_EMAIL,
-  password: process.env.UPPROMOTE_NEWBRAND_PASSWORD,
-  baseUrl: process.env.UPPROMOTE_NEWBRAND_BASE_URL,
+  email: resolveCredential('newbrand', 'EMAIL'),
+  password: resolveCredential('newbrand', 'PASSWORD'),
+  baseUrl: resolveBaseUrl('newbrand'),
   advertiserId: 'newbrand',
   advertiserName: 'New Brand',
 },
 ```
 
-2. Add to `ACCOUNT_NAMES` array in `src/config.js`
+3. Add to the `ACCOUNT_NAMES` array in `src/config.js`
 
-3. Add environment variables to `.env`
+4. Add environment variables to `.env` (or set GitHub secrets for CI):
+   - `UPPROMOTE_NEWBRAND_EMAIL`
+   - `UPPROMOTE_NEWBRAND_PASSWORD`
+
+5. Add cookie path to `.github/workflows/scrape-and-upload.yml` session cache
 
 ### Field Mappings
 

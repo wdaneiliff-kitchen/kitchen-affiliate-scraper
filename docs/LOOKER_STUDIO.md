@@ -49,6 +49,11 @@ These 22 columns are written by the shared transformer (`packages/shared/src/tra
 | `holbrook` | Holbrook | UpPromote | `uppromote` |
 | `diadem` | Diadem | UpPromote | `uppromote` |
 | `pickleballapes` | Pickleball Apes | UpPromote | `uppromote` |
+| `udrippin` | UDrippin | UpPromote | `uppromote` |
+| `11six24` | 11six24 | UpPromote | `uppromote` |
+| `vatic` | Vatic | UpPromote | `uppromote` |
+| `gruvn` | Gruvn | UpPromote | `uppromote` |
+| `sixzero` | Six Zero | UpPromote | `uppromote` |
 | `paddletek` | Paddletek Pickleball | Shortly | `shortly` |
 | `goaffpro-forwrd` | GoAffPro (Forwrd) | GoAffPro | `goaffpro` |
 

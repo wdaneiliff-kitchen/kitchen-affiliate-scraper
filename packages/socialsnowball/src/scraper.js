@@ -442,9 +442,20 @@ function looksLikePaidEndpoint(url) {
  * Returns true if a raw API record looks like an aggregated payout batch
  * rather than an individual order. Aggregated batches bundle multiple
  * orders into one summed amount and lack individual order identifiers.
+ *
+ * CRBN/Friday individual paid records have commission.raw and
+ * referred_revenue.raw (dollar amounts) plus order_date — these are
+ * NOT aggregated batches even though they carry payout_date.
+ * True aggregated batches use amount.value / associated_revenue.value
+ * (hundredths-of-cents) and lack per-order fields.
  */
 function isAggregatedBatch(record) {
   if (record.is_grouped) return true;
+
+  // Individual order indicators — present on CRBN/Friday per-order records
+  if (record.commission?.raw !== undefined || record.referred_revenue?.raw !== undefined) return false;
+  if (record.order_date || record.date) return false;
+
   if (!record.source_item_external_id && !record.source_item_external_created_at) {
     const hasAggregatedShape =
       (record.amount?.value !== undefined && record.associated_revenue?.value !== undefined) ||
