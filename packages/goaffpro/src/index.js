@@ -9,7 +9,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: resolve(__dirname, '../../../.env') });
 
 import { scrapeCommissions } from './scraper.js';
-import { createTransformer } from '@kitchen/shared/transformer';
+import { createTransformer, filterValidCommissionRecords } from '@kitchen/shared/transformer';
+import { uploadToSheets, validateAccess, getServiceAccountEmail, createSpreadsheet } from '@kitchen/shared/sheets';
 import { FIELD_MAPPINGS, STATUS_MAPPINGS, ADVERTISER_ID, ADVERTISER_NAME, extractProductTitle } from './config.js';
 
 const transformer = createTransformer({
@@ -23,75 +24,131 @@ const transformer = createTransformer({
 /**
  * GoAffPro (Forwrd) Scraper -- Main Entry Point
  *
- * Logs into the Forwrd affiliate portal, reads the Details sales table,
- * and exits based on what it finds:
- *
- *   - No records found  → exit 0  (expected while store has no sales yet)
- *   - Records found     → exit 1  (alerts the GitHub Action + Slack that
- *                                  sales data has appeared and needs review)
+ * Scrapes commission data from the Forwrd affiliate portal and uploads
+ * to Google Sheets.
  *
  * Usage:
- *   pnpm goaffpro                  # Full run
+ *   pnpm goaffpro                  # Full run (scrape + upload)
  *   pnpm goaffpro:scrape           # Scrape only (outputs JSON, always exits 0)
  *   node src/index.js --visible    # Opens browser window for debugging
  *   node src/index.js --debug      # Verbose output
+ *   node src/index.js --create-sheet  # Create a new Google Sheet with headers
+ *   node src/index.js --clear      # Clear existing data before uploading
+ *   node src/index.js --no-dedupe  # Skip transaction_id deduplication
  */
 async function main() {
   console.log('═══════════════════════════════════════════════════════════');
-  console.log('  GoAffPro (Forwrd) Scraper');
+  console.log('  GoAffPro (Forwrd) Scraper → Google Sheets');
   console.log('═══════════════════════════════════════════════════════════\n');
 
   const args = process.argv.slice(2);
   const scrapeOnly = args.includes('--scrape-only');
+  const uploadOnly = args.includes('--upload-only');
+  const createSheet = args.includes('--create-sheet');
   const headless = !args.includes('--visible');
 
-  const config = validateConfig();
+  const config = validateConfig({ scrapeOnly, uploadOnly, createSheet });
 
   try {
-    console.log('📊 Scraping GoAffPro (Forwrd) Details table...\n');
+    if (createSheet) {
+      const spreadsheetId = await createSpreadsheet({
+        credentialsPath: config.credentialsPath,
+        title: 'GoAffPro (Forwrd) Commissions',
+      });
 
-    const rawRecords = await scrapeCommissions({
-      email: config.email,
-      password: config.password,
-      headless,
+      const serviceEmail = await getServiceAccountEmail(config.credentialsPath);
+      console.log('\n📋 Next steps:');
+      console.log(`   1. Open: https://docs.google.com/spreadsheets/d/${spreadsheetId}`);
+      console.log(`   2. The sheet is owned by: ${serviceEmail}`);
+      console.log(`   3. Share it with your personal Google account if needed`);
+      console.log(`   4. Update GOOGLE_SHEET_ID in your .env file: ${spreadsheetId}`);
+      return;
+    }
+
+    if (!scrapeOnly) {
+      console.log('🔐 Validating Google Sheets access...');
+      const hasAccess = await validateAccess({
+        credentialsPath: config.credentialsPath,
+        spreadsheetId: config.spreadsheetId,
+      });
+
+      if (!hasAccess) {
+        const serviceEmail = await getServiceAccountEmail(config.credentialsPath);
+        console.log(`\n💡 To fix: Share your Google Sheet with: ${serviceEmail}`);
+        process.exit(1);
+      }
+      console.log('');
+    }
+
+    let records;
+
+    if (!uploadOnly) {
+      console.log('📊 Scraping GoAffPro (Forwrd) Details table...\n');
+
+      const rawRecords = await scrapeCommissions({
+        email: config.email,
+        password: config.password,
+        headless,
+      });
+
+      console.log(`\n📦 Raw records found: ${rawRecords.length}`);
+
+      if (rawRecords.length === 0) {
+        console.log('\n✅ Details table is empty -- no sales data yet. Nothing to do.');
+        console.log('═══════════════════════════════════════════════════════════\n');
+        process.exit(0);
+      }
+
+      if (rawRecords.length > 0 && process.env.DEBUG) {
+        console.log('📋 Sample raw record fields:', Object.keys(rawRecords[0]).join(', '));
+        console.log('📋 First raw record:', JSON.stringify(rawRecords[0], null, 2));
+      }
+
+      console.log('🔄 Transforming records...');
+      const transformed = transformer.transformRecords(rawRecords);
+      records = filterValidCommissionRecords(transformed);
+      const invalidCount = transformed.length - records.length;
+      if (invalidCount > 0) {
+        console.log(`⚠️ Filtered out ${invalidCount} invalid records (missing order_date or zero amounts)`);
+      }
+      console.log(`✅ Valid commission records: ${records.length}\n`);
+
+      const jsonPath = `goaffpro-sales-${new Date().toISOString().slice(0, 10)}.json`;
+      await writeFile(jsonPath, JSON.stringify({ raw: rawRecords, transformed: records }, null, 2));
+      console.log(`💾 Saved to: ${jsonPath}\n`);
+
+      if (scrapeOnly) {
+        console.log('✅ Scrape complete (--scrape-only mode)');
+        return;
+      }
+    } else {
+      console.log('📂 Upload-only mode - looking for recent JSON file...');
+      console.log('⚠️  Upload-only mode requires implementing JSON file loading');
+      console.log('    For now, run without --upload-only to scrape and upload together');
+      process.exit(1);
+    }
+
+    console.log('📤 Uploading to Google Sheets...\n');
+    const result = await uploadToSheets({
+      spreadsheetId: config.spreadsheetId,
+      credentialsPath: config.credentialsPath,
+      records,
+      sheetName: config.sheetName,
+      clearFirst: args.includes('--clear'),
+      dedupeByTransactionId: !args.includes('--no-dedupe'),
     });
 
-    console.log(`\n📦 Raw records found: ${rawRecords.length}`);
-
-    if (rawRecords.length === 0) {
-      console.log('\n✅ Details table is empty -- no sales data yet. Nothing to do.');
-      console.log('═══════════════════════════════════════════════════════════\n');
-      process.exit(0);
+    console.log('\n═══════════════════════════════════════════════════════════');
+    console.log('  ✅ Complete!');
+    console.log('═══════════════════════════════════════════════════════════');
+    console.log(`  📊 Total records:    ${result.total}`);
+    if (result.invalid > 0) {
+      console.log(`  ⚠️  Invalid (filtered): ${result.invalid}`);
     }
-
-    // Sales have appeared -- transform and save so the data is inspectable
-    if (rawRecords.length > 0 && process.env.DEBUG) {
-      console.log('📋 Sample raw record fields:', Object.keys(rawRecords[0]).join(', '));
-      console.log('📋 First raw record:', JSON.stringify(rawRecords[0], null, 2));
-    }
-
-    console.log('🔄 Transforming records...');
-    const records = transformer.transformRecords(rawRecords);
-    console.log(`   Transformed: ${records.length} record(s)`);
-
-    const jsonPath = `goaffpro-sales-${new Date().toISOString().slice(0, 10)}.json`;
-    await writeFile(jsonPath, JSON.stringify({ raw: rawRecords, transformed: records }, null, 2));
-    console.log(`💾 Saved to: ${jsonPath}`);
-
-    if (scrapeOnly) {
-      console.log('\n✅ Scrape complete (--scrape-only mode). Exiting with 0.');
-      process.exit(0);
-    }
-
-    // Exit 1 so the GitHub Action detects this as a notable event and fires Slack alert
-    console.log('\n');
-    console.log('╔═══════════════════════════════════════════════════════════╗');
-    console.log(`║  ALERT: Found ${String(records.length).padEnd(3)} sales record(s) on GoAffPro (Forwrd)!  ║`);
-    console.log('║  Review the JSON output and configure upload when ready.  ║');
-    console.log('╚═══════════════════════════════════════════════════════════╝');
-    console.log(`\n  Records saved to: ${jsonPath}`);
-    console.log('  To upload: implement the uploadToSheets call in index.js\n');
-    process.exit(1);
+    console.log(`  ✅ Uploaded:         ${result.uploaded}`);
+    console.log(`  ⏭️  Skipped (dupes):  ${result.skipped}`);
+    console.log(`  🔗 Sheet: https://docs.google.com/spreadsheets/d/${config.spreadsheetId}`);
+    console.log('═══════════════════════════════════════════════════════════\n');
 
   } catch (err) {
     console.error('\n❌ Error:', err.message);
@@ -100,15 +157,25 @@ async function main() {
   }
 }
 
-function validateConfig() {
+function validateConfig({ scrapeOnly, uploadOnly, createSheet }) {
   const config = {
     email: process.env.GOAFFPRO_EMAIL,
     password: process.env.GOAFFPRO_PASSWORD,
+    spreadsheetId: process.env.GOOGLE_SHEET_ID,
+    credentialsPath: process.env.GOOGLE_CREDENTIALS_PATH || resolve(__dirname, '../../../credentials.json'),
+    sheetName: process.env.SHEET_NAME || 'Comissions',
   };
 
   const missing = [];
-  if (!config.email) missing.push('GOAFFPRO_EMAIL');
-  if (!config.password) missing.push('GOAFFPRO_PASSWORD');
+
+  if (!uploadOnly && !createSheet) {
+    if (!config.email) missing.push('GOAFFPRO_EMAIL');
+    if (!config.password) missing.push('GOAFFPRO_PASSWORD');
+  }
+
+  if (!scrapeOnly) {
+    if (!config.spreadsheetId && !createSheet) missing.push('GOOGLE_SHEET_ID');
+  }
 
   if (missing.length > 0) {
     console.error('❌ Missing required environment variables:\n');

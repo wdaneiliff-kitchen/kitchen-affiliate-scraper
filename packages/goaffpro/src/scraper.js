@@ -89,7 +89,8 @@ export async function scrapeCommissions({ email, password, headless = true }) {
       await page.goto(DASHBOARD_URL, { waitUntil: 'networkidle2', timeout: 60000 });
       await sleep(2000);
 
-      if (page.url().includes('login')) {
+      const isAuthenticated = await checkAuthenticated(page);
+      if (!isAuthenticated) {
         console.log('   ⚠️  Session expired, logging in again...');
         await performLogin(page, email, password);
       } else {
@@ -101,9 +102,9 @@ export async function scrapeCommissions({ email, password, headless = true }) {
       await performLogin(page, email, password);
     }
 
-    // Ensure we are on the dashboard
-    if (page.url().includes('login')) {
-      throw new Error('Login failed -- still on login page after attempting authentication');
+    const postLoginAuth = await checkAuthenticated(page);
+    if (!postLoginAuth) {
+      throw new Error('Login failed -- not seeing authenticated dashboard after login');
     }
 
     console.log(`   Current URL: ${page.url()}`);
@@ -300,6 +301,35 @@ async function checkTableEmpty(page) {
     const text = document.body.innerText;
     return /no\s*data/i.test(text) || /no\s*records/i.test(text) || /no\s*results/i.test(text);
   });
+}
+
+/**
+ * Checks whether the page shows an authenticated dashboard rather than the
+ * public landing page. The public page has "Join Now" CTAs and a Login button;
+ * an authenticated session shows dashboard nav items or account elements.
+ *
+ * @param {import('puppeteer').Page} page
+ * @returns {Promise<boolean>}
+ */
+async function checkAuthenticated(page) {
+  if (page.url().includes('login')) return false;
+
+  const isPublicLanding = await page.evaluate(() => {
+    const text = document.body.innerText || '';
+    return /join\s*now/i.test(text) && /how\s*does\s*it\s*work/i.test(text);
+  });
+
+  if (isPublicLanding) return false;
+
+  const hasAuthElements = await page.evaluate(() => {
+    const text = document.body.innerText || '';
+    return !!(
+      document.querySelector('[class*="dashboard"], [class*="sidebar"], [class*="nav-menu"]') ||
+      /my\s*account|dashboard|commission|earning|referral.*link/i.test(text)
+    );
+  });
+
+  return hasAuthElements;
 }
 
 /**
