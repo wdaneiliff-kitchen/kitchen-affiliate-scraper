@@ -13,7 +13,92 @@ import { mkdir, writeFile, readFile } from 'fs/promises';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const COOKIES_DIR = resolve(__dirname, '../.cookies');
 
-const LOGIN_URL = 'https://www.affiliatly.com/login.html?affiliates=1';
+const DEFAULT_LOGIN_URL = 'https://www.affiliatly.com/login.html?affiliates=1';
+
+/** Max time to wait for the reCAPTCHA v2 widget (sitekey + anchor iframe). Affiliatly can load slowly. */
+const RECAPTCHA_WIDGET_TIMEOUT_MS = Number(process.env.AFFILIATLY_RECAPTCHA_LOAD_MS) || 150000;
+
+// #region agent log
+/** @param {{ hypothesisId: string, location: string, message: string, data?: Record<string, unknown>, runId?: string }} p */
+function agentDebugLog(p) {
+  fetch('http://127.0.0.1:7245/ingest/4c8d336a-0bc0-4129-bb3e-96c357aadcc9', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'b94194' },
+    body: JSON.stringify({
+      sessionId: 'b94194',
+      hypothesisId: p.hypothesisId,
+      location: p.location,
+      message: p.message,
+      data: p.data,
+      runId: p.runId,
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+}
+// #endregion
+
+/**
+ * Waits until reCAPTCHA v2 exposes a sitekey and the anchor iframe is in the DOM.
+ * Program-specific affiliate panels (e.g. …/af-XXXXX/affiliate.panel) often load recaptcha/api.js
+ * but only show a math captcha — no data-sitekey. A single long waitForFunction would block for
+ * the full timeout; we first wait briefly for a sitekey, then bail if this page has no widget.
+ * @param {import('puppeteer').Page} page
+ * @param {number} timeoutMs
+ * @returns {Promise<boolean>} True if the widget became ready, false on timeout
+ */
+async function waitForRecaptchaWidget(page, timeoutMs) {
+  const start = Date.now();
+  const sitekeyProbeMs = Math.min(12000, timeoutMs);
+
+  try {
+    await page.waitForFunction(
+      () => {
+        const el =
+          document.querySelector('.g-recaptcha[data-sitekey]') ||
+          document.querySelector('[data-sitekey]');
+        const sk = el?.getAttribute('data-sitekey');
+        return !!(sk && sk.length >= 20);
+      },
+      { timeout: sitekeyProbeMs }
+    );
+  } catch {
+    const waitedMs = Date.now() - start;
+    console.log(
+      `   ℹ️ No reCAPTCHA sitekey on this page (${Math.round(waitedMs / 1000)}s) — math captcha / non-reCAPTCHA login`
+    );
+    return false;
+  }
+
+  try {
+    await page.waitForFunction(
+      () => document.querySelector('iframe[src*="recaptcha"]') !== null,
+      { timeout: timeoutMs }
+    );
+    const waitedMs = Date.now() - start;
+    // #region agent log
+    agentDebugLog({
+      hypothesisId: 'H-SLOW',
+      location: 'scraper.js:waitForRecaptchaWidget',
+      message: 'reCAPTCHA widget ready',
+      data: { waitedMs, ok: true, timeoutMs },
+    });
+    // #endregion
+    console.log(`   ✅ reCAPTCHA loaded (${Math.round(waitedMs / 1000)}s)`);
+    return true;
+  } catch {
+    const waitedMs = Date.now() - start;
+    // #region agent log
+    agentDebugLog({
+      hypothesisId: 'H-SLOW',
+      location: 'scraper.js:waitForRecaptchaWidget',
+      message: 'reCAPTCHA widget wait timed out',
+      data: { waitedMs, ok: false, timeoutMs },
+    });
+    // #endregion
+    console.log(`   ⚠️ reCAPTCHA not fully loaded within ${Math.round(timeoutMs / 1000)}s`);
+    return false;
+  }
+}
 
 /**
  * Returns the path to the cookie file for a given account.
@@ -62,6 +147,106 @@ async function loadCookies(page, accountId) {
 }
 
 /**
+ * Sets email/password (and math captcha if present). Use after a reload or before a CAPTCHA retry
+ * so fields are not empty when the login page re-renders.
+ * @param {import('puppeteer').Page} page
+ * @param {string} email
+ * @param {string} password
+ * @returns {Promise<boolean>}
+ */
+async function fillAffiliatlyCredentials(page, email, password) {
+  if (!email || !password) return false;
+
+  const emailSelector = await findSelector(page, [
+    'input[name="email"]',
+    'input[type="email"]',
+    'input[name="username"]',
+    'input[name="login"]',
+    '#email',
+    '#username',
+    'input[placeholder*="email" i]',
+    'input[placeholder*="user" i]',
+    'form input[type="text"]',
+    'form input[type="email"]',
+  ]);
+  const passwordSelector = await findSelector(page, [
+    'input[name="password"]',
+    'input[type="password"]',
+    '#password',
+    'input[placeholder*="password" i]',
+  ]);
+
+  if (!emailSelector || !passwordSelector) {
+    console.warn('   ⚠️ Could not find login fields to re-fill');
+    return false;
+  }
+
+  const fieldsWereEmpty = await page.evaluate(
+    (eSel, pSel) => {
+      const e = document.querySelector(eSel);
+      const p = document.querySelector(pSel);
+      return !String(e?.value || '').trim() || !String(p?.value || '').trim();
+    },
+    emailSelector,
+    passwordSelector
+  );
+
+  await page.evaluate(
+    ({ emailSel, passSel, em, pw }) => {
+      const apply = (sel, val) => {
+        const el = document.querySelector(sel);
+        if (!el) return;
+        el.focus();
+        el.value = val;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      };
+      apply(emailSel, em);
+      apply(passSel, pw);
+    },
+    { emailSel: emailSelector, passSel: passwordSelector, em: email, pw: password }
+  );
+
+  const mathCaptchaResult = await page.evaluate(() => {
+    const captchaInput = document.querySelector('input[name="captcha"]');
+    if (!captchaInput) return null;
+    const container = captchaInput.closest('.form-group') || captchaInput.parentElement;
+    const label = container?.querySelector('label');
+    if (!label) return null;
+    const text = label.textContent.trim();
+    const match = text.match(/(\d+)\s*([+\-*×÷/])\s*(\d+)/);
+    if (!match) return null;
+    const a = parseInt(match[1], 10);
+    const op = match[2];
+    const b = parseInt(match[3], 10);
+    let answer;
+    switch (op) {
+      case '+': answer = a + b; break;
+      case '-': answer = a - b; break;
+      case '*': case '×': answer = a * b; break;
+      case '/': case '÷': answer = Math.floor(a / b); break;
+      default: return null;
+    }
+    return String(answer);
+  });
+
+  if (mathCaptchaResult) {
+    await page.evaluate((ans) => {
+      const el = document.querySelector('input[name="captcha"]');
+      if (el) {
+        el.value = ans;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    }, mathCaptchaResult);
+  }
+
+  if (fieldsWereEmpty) {
+    console.log('   🔐 Credentials re-filled (fields were empty — e.g. after refresh)');
+  }
+  return true;
+}
+
+/**
  * Scrapes commission data from the Affiliatly affiliate dashboard.
  * Handles Google reCAPTCHA v2 via 2captcha auto-solve with manual fallback.
  *
@@ -70,10 +255,20 @@ async function loadCookies(page, accountId) {
  * @param {string} options.password - Affiliatly login password
  * @param {string} [options.accountId='engage'] - Account identifier for cookie persistence
  * @param {boolean} [options.headless=true] - Run browser in headless mode
+ * @param {string} [options.loginUrl] - Account-specific login URL
+ * @param {string} [options.userAffiliateProgramId] - Optional program id when generic login lists multiple programs
  * @param {string} [options.twoCaptchaKey] - Optional 2captcha API key for auto-solving
  * @returns {Promise<Array>} Array of commission objects
  */
-export async function scrapeCommissions({ email, password, accountId = 'engage', headless = true, twoCaptchaKey }) {
+export async function scrapeCommissions({
+  email,
+  password,
+  accountId = 'engage',
+  headless = true,
+  loginUrl,
+  userAffiliateProgramId,
+  twoCaptchaKey,
+}) {
   console.log('🚀 Starting Affiliatly scraper...');
   console.log(`   Account: ${accountId}`);
   console.log(`   Headless: ${headless}`);
@@ -91,15 +286,26 @@ export async function scrapeCommissions({ email, password, accountId = 'engage',
   const page = await createStealthPage(browser);
 
   try {
+    // Skip "I agree" cookie banner (overlays the form in visible mode; same cookie checkLegalCookie sets)
+    await page.setCookie({
+      name: 'legal_cookie',
+      value: 'agree=1',
+      domain: 'www.affiliatly.com',
+      path: '/',
+    }).catch(() => {});
+
     // Try loading saved cookies to skip login
     const hasCookies = await loadCookies(page, accountId);
 
     // Step 1: Navigate to login page (cookies may bypass it)
-    console.log('📍 Navigating to login page...');
-    await page.goto(LOGIN_URL, { waitUntil: 'networkidle2', timeout: 60000 });
+    const targetLoginUrl = loginUrl || DEFAULT_LOGIN_URL;
+    console.log(`📍 Navigating to login page: ${targetLoginUrl}`);
+    await page.goto(targetLoginUrl, { waitUntil: 'networkidle2', timeout: 60000 });
 
-    // Check if saved cookies kept us logged in (redirected away from login)
-    const stillOnLogin = page.url().includes('login');
+    // Check if saved cookies kept us logged in (no password field = already logged in)
+    const stillOnLogin = await page.evaluate(() =>
+      document.querySelector('input[type="password"]') !== null
+    );
 
     if (hasCookies && !stillOnLogin) {
       console.log('   ✅ Session cookies still valid — skipped login!');
@@ -167,6 +373,83 @@ export async function scrapeCommissions({ email, password, accountId = 'engage',
 
     await sleep(500);
 
+    // Step 2b: Solve simple math captcha if present (e.g., "2 + 2 equals")
+    const mathCaptchaResult = await page.evaluate(() => {
+      const captchaInput = document.querySelector('input[name="captcha"]');
+      if (!captchaInput) return null;
+
+      const container = captchaInput.closest('.form-group') || captchaInput.parentElement;
+      const label = container?.querySelector('label');
+      if (!label) return null;
+
+      const text = label.textContent.trim();
+      const match = text.match(/(\d+)\s*([+\-*×÷/])\s*(\d+)/);
+      if (!match) return null;
+
+      const a = parseInt(match[1]);
+      const op = match[2];
+      const b = parseInt(match[3]);
+
+      let answer;
+      switch (op) {
+        case '+': answer = a + b; break;
+        case '-': answer = a - b; break;
+        case '*': case '×': answer = a * b; break;
+        case '/': case '÷': answer = Math.floor(a / b); break;
+        default: return null;
+      }
+
+      return { answer: String(answer), text };
+    });
+
+    if (mathCaptchaResult) {
+      await page.type('input[name="captcha"]', mathCaptchaResult.answer, { delay: 50 });
+      console.log(`   ✅ Math captcha solved: "${mathCaptchaResult.text}" → ${mathCaptchaResult.answer}`);
+    }
+
+    await sleep(500);
+
+    // #region agent log
+    {
+      const loginDiag = await page.evaluate(() => {
+        const forms = [...document.querySelectorAll('form')].map((f, i) => ({
+          i,
+          action: (f.action || '').slice(0, 120),
+          method: f.method || 'get',
+          inputNames: [...f.querySelectorAll('input, textarea, select')]
+            .map((el) => el.name || el.id || el.type)
+            .filter(Boolean),
+        }));
+        const radios = [...document.querySelectorAll('input[type="radio"]')].map((r) => ({
+          name: r.name,
+          value: r.value,
+          checked: r.checked,
+        }));
+        const selectedTypeHint = [...document.querySelectorAll('a, button, li, label, span')]
+          .filter((el) => /store owner|advertiser|affiliate|publisher|staff/i.test(el.textContent || ''))
+          .slice(0, 8)
+          .map((el) => (el.textContent || '').trim().slice(0, 80));
+        return {
+          href: location.href,
+          forms,
+          radios,
+          selectedTypeHint,
+        };
+      });
+      agentDebugLog({
+        hypothesisId: 'H1-H2',
+        location: 'scraper.js:post-credentials',
+        message: 'Login page DOM: forms, radios, account-type hints',
+        data: loginDiag,
+      });
+    }
+    // #endregion
+
+    console.log(
+      `   ⏳ Waiting for reCAPTCHA to appear (up to ${Math.round(RECAPTCHA_WIDGET_TIMEOUT_MS / 1000)}s; override with AFFILIATLY_RECAPTCHA_LOAD_MS)...`
+    );
+    await waitForRecaptchaWidget(page, RECAPTCHA_WIDGET_TIMEOUT_MS);
+
     // Step 3: Check for reCAPTCHA before submitting
     const hasCaptcha = await page.evaluate(() => {
       return document.querySelector('iframe[src*="recaptcha"]') !== null ||
@@ -178,40 +461,72 @@ export async function scrapeCommissions({ email, password, accountId = 'engage',
     });
 
     if (hasCaptcha) {
+      let captchaSolveAttempts = 0;
+
       // Try 2captcha if API key provided
       if (twoCaptchaKey) {
         console.log('\n🤖 reCAPTCHA detected - attempting auto-solve with 2captcha...');
-        const solved = await solve2Captcha(page, twoCaptchaKey);
+        const solved = await solve2Captcha(page, twoCaptchaKey, {
+          userAffiliateProgramId,
+          loginUrlHint: loginUrl || '',
+          email,
+          password,
+        });
+        captchaSolveAttempts++;
         if (!solved) {
           console.log('   ⚠️ Auto-solve failed, falling back to manual...');
         }
       }
 
+      // When 2captcha is available, let the retry logic below re-solve if the
+      // first token was rejected. The reCAPTCHA widget text ("I'm not a robot")
+      // stays in the DOM even after injecting a solved token, so checking it here
+      // gives false positives that would throw before retries can run.
+      if (!twoCaptchaKey && headless) {
+        throw new Error('CAPTCHA detected but no TWOCAPTCHA_API_KEY configured. Cannot solve in headless mode.');
+      }
+
       // Check if we already navigated away from login (2captcha may have succeeded)
-      const alreadyLoggedIn = !page.url().includes('login') || await page.evaluate(() => {
+      const isLoggedIn = () => page.evaluate(() => {
         return document.querySelector('input[type="password"]') === null;
       });
 
-      if (alreadyLoggedIn) {
-        console.log('   ✅ 2captcha solved CAPTCHA and login succeeded!');
-      } else {
-        console.log('\n🤖 reCAPTCHA still present — manual solving may be needed.');
+      let loggedIn = await isLoggedIn();
 
-        if (headless) {
-          throw new Error('CAPTCHA detected but running in headless mode. Please run with --visible flag to solve manually.');
+      if (loggedIn) {
+        console.log('   ✅ 2captcha solved CAPTCHA and login succeeded!');
+      } else if (twoCaptchaKey && captchaSolveAttempts > 0) {
+        // Retry with fresh tokens — previous token may have been consumed/rejected
+        for (let attempt = 2; attempt <= 4 && !loggedIn; attempt++) {
+          console.log(`   🔁 Still on login page after CAPTCHA solve, re-solving (attempt ${attempt})...`);
+          await solve2Captcha(page, twoCaptchaKey, {
+            userAffiliateProgramId,
+            loginUrlHint: loginUrl || '',
+            email,
+            password,
+          });
+          captchaSolveAttempts++;
+          loggedIn = await isLoggedIn();
         }
 
+        if (loggedIn) {
+          console.log('   ✅ CAPTCHA retry succeeded!');
+        } else if (headless) {
+          throw new Error('CAPTCHA detected but auto-solve failed after multiple attempts in headless mode.');
+        }
+      }
+
+      if (!loggedIn && !headless) {
+        console.log('\n🤖 reCAPTCHA still present — manual solving may be needed.');
         console.log('   ⏸️  Please solve the CAPTCHA in the browser window...');
         console.log('   ⏳ Waiting up to 120 seconds...\n');
 
-        // Wait for CAPTCHA to be solved
         let captchaSolved = false;
-        let loginClickedAt = 0; // tracks when we last clicked login to avoid spamming
+        let loginClickedAt = 0;
 
         for (let i = 0; i < 60; i++) {
           await sleep(2000);
 
-          // Check if we've navigated away from login
           const stillOnLogin = await page.evaluate(() => {
             return document.querySelector('input[type="password"]') !== null;
           });
@@ -222,7 +537,6 @@ export async function scrapeCommissions({ email, password, accountId = 'engage',
             break;
           }
 
-          // Check if reCAPTCHA has a solved token (green checkmark / response filled)
           const captchaState = await page.evaluate(() => {
             const textarea = document.querySelector('#g-recaptcha-response, textarea[name="g-recaptcha-response"]');
             const hasToken = textarea && textarea.value && textarea.value.length > 20;
@@ -233,7 +547,6 @@ export async function scrapeCommissions({ email, password, accountId = 'engage',
           const looksActuallySolved = captchaState.hasToken || captchaState.hasCheckmark;
 
           if (looksActuallySolved && (i - loginClickedAt) >= 3) {
-            // Only try clicking login once every ~6s to avoid spamming
             console.log('   🔄 CAPTCHA appears solved, clicking login...');
             loginClickedAt = i;
 
@@ -247,7 +560,6 @@ export async function scrapeCommissions({ email, password, accountId = 'engage',
               await page.click(loginBtn);
               await sleep(3000);
 
-              // Check if we navigated after clicking
               const navigated = await page.evaluate(() => {
                 return document.querySelector('input[type="password"]') === null;
               });
@@ -258,7 +570,6 @@ export async function scrapeCommissions({ email, password, accountId = 'engage',
                 break;
               }
 
-              // If still on login, the token may be stale/invalid — tell user
               console.log('   ⚠️ Login click did not navigate — CAPTCHA token may be invalid.');
               console.log('   ⏸️  Please re-solve the CAPTCHA manually in the browser...');
             }
@@ -324,11 +635,15 @@ export async function scrapeCommissions({ email, password, accountId = 'engage',
 
     await sleep(3000);
 
-    // Check if login was successful
+    // Check if login was successful (password field gone = dashboard loaded)
     let currentUrl = page.url();
     console.log(`   Current URL after login: ${currentUrl}`);
 
-    if (currentUrl.includes('login')) {
+    const stillHasPasswordField = await page.evaluate(() =>
+      document.querySelector('input[type="password"]') !== null
+    );
+
+    if (stillHasPasswordField) {
       const errorMsg = await page.evaluate(() => {
         const errorEl = document.querySelector('.error, .alert-danger, .login-error, [class*="error"]');
         return errorEl ? errorEl.textContent.trim() : null;
@@ -418,16 +733,61 @@ export async function scrapeCommissions({ email, password, accountId = 'engage',
  */
 async function injectRecaptchaToken(page, token) {
   return await page.evaluate((t) => {
-    // 1. Set all g-recaptcha-response textareas (usually one, but be safe)
+    const form =
+      document.querySelector('form.login_form') ||
+      document.querySelector('form.login') ||
+      document.querySelector('form[action*="login"]') ||
+      document.querySelector('form');
+
+    // 1. Set all g-recaptcha-response textareas and fire DOM events
     const textareas = document.querySelectorAll(
-      '#g-recaptcha-response, textarea[name="g-recaptcha-response"]'
+      '#g-recaptcha-response, textarea[name="g-recaptcha-response"], textarea[id^="g-recaptcha-response"]'
     );
     textareas.forEach((el) => {
       el.value = t;
       el.innerHTML = t;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      el.dispatchEvent(new Event('blur', { bubbles: true }));
     });
 
-    // 2. Try data-callback attribute on the widget element
+    // 1b. Google's textarea is usually outside <form.login>, so application/x-www-form-urlencoded POST omits it.
+    //     Move it into the login form so $("form.login").submit() includes g-recaptcha-response (fixes server "Please use the Google reCaptcha").
+    const primaryTa =
+      document.querySelector('#g-recaptcha-response') ||
+      document.querySelector('textarea[name="g-recaptcha-response"]');
+    if (form && primaryTa && !form.contains(primaryTa)) {
+      form.appendChild(primaryTa);
+    }
+    if (form) {
+      const taInForm = form.querySelector('textarea[name="g-recaptcha-response"], #g-recaptcha-response');
+      if (taInForm) {
+        form.querySelectorAll('input[name="g-recaptcha-response"]').forEach((el) => el.remove());
+      } else {
+        let hid = form.querySelector('input[name="g-recaptcha-response"]');
+        if (!hid) {
+          hid = document.createElement('input');
+          hid.type = 'hidden';
+          hid.name = 'g-recaptcha-response';
+          form.appendChild(hid);
+        }
+        hid.value = t;
+      }
+    }
+
+    // 2. Patch grecaptcha (widget id is often passed as first arg)
+    try {
+      if (window.grecaptcha) {
+        window.grecaptcha.getResponse = function () { return t; };
+        window.grecaptcha.execute = function () { return Promise.resolve(t); };
+        if (window.grecaptcha.enterprise) {
+          window.grecaptcha.enterprise.getResponse = function () { return t; };
+          window.grecaptcha.enterprise.execute = function () { return Promise.resolve(t); };
+        }
+      }
+    } catch (_) { /* ignore if frozen */ }
+
+    // 3. Try data-callback attribute on the widget element
     const widget = document.querySelector('.g-recaptcha, [data-sitekey]');
     if (widget) {
       const callbackName = widget.getAttribute('data-callback');
@@ -437,28 +797,34 @@ async function injectRecaptchaToken(page, token) {
       }
     }
 
-    // 3. Walk ___grecaptcha_cfg.clients to find the callback
+    // 4. Walk ___grecaptcha_cfg.clients (nested objects + arrays; Google changes shape over time)
     try {
       const clients = window.___grecaptcha_cfg?.clients;
       if (clients) {
-        for (const clientId of Object.keys(clients)) {
-          const client = clients[clientId];
-
-          // Recursively search the client object for a callback function
-          const findCallback = (obj, depth) => {
-            if (depth > 6 || !obj || typeof obj !== 'object') return null;
+        const findCallback = (obj, depth) => {
+          if (depth > 12 || obj == null) return null;
+          if (typeof obj === 'function') return null;
+          if (Array.isArray(obj)) {
+            for (const item of obj) {
+              const found = findCallback(item, depth + 1);
+              if (found) return found;
+            }
+            return null;
+          }
+          if (typeof obj === 'object') {
+            if (typeof obj.callback === 'function') return obj.callback;
             for (const key of Object.keys(obj)) {
               const val = obj[key];
               if (key === 'callback' && typeof val === 'function') return val;
-              if (typeof val === 'object') {
-                const found = findCallback(val, depth + 1);
-                if (found) return found;
-              }
+              const found = findCallback(val, depth + 1);
+              if (found) return found;
             }
-            return null;
-          };
+          }
+          return null;
+        };
 
-          const cb = findCallback(client, 0);
+        for (const clientId of Object.keys(clients)) {
+          const cb = findCallback(clients[clientId], 0);
           if (cb) {
             cb(t);
             return true;
@@ -469,7 +835,7 @@ async function injectRecaptchaToken(page, token) {
       // ignore errors walking internal config
     }
 
-    // 4. Try common global callback names as last resort
+    // 5. Try common global callback names as last resort
     const globalNames = ['onRecaptchaSuccess', 'captchaCallback', 'onCaptchaSuccess', 'recaptchaCallback'];
     for (const name of globalNames) {
       if (typeof window[name] === 'function') {
@@ -483,17 +849,143 @@ async function injectRecaptchaToken(page, token) {
 }
 
 /**
+ * Main-site `login.html?affiliates=1` uses `form.login` + `#login_into_account` with preventDefault →
+ * AJAX `check_programs` → then `user_affiliate_program_id` + submit. Raw `form.submit()` skips that.
+ */
+async function pageHasMainAffiliatlyLoginForm(page) {
+  return page.evaluate(
+    () =>
+      Boolean(
+        document.querySelector('form.login') &&
+          document.querySelector('#login_into_account') &&
+          document.querySelector('[name="user_affiliate_program_id"]')
+      )
+  );
+}
+
+/**
+ * Mirrors functions_two.js: POST check_programs then native form.submit() with program id set.
+ * @param {{ userAffiliateProgramId?: string, loginUrlHint?: string }} opts
+ */
+async function submitAffiliatlyCheckProgramsThenForm(page, opts) {
+  const { userAffiliateProgramId, loginUrlHint } = opts || {};
+  const navPromise = page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 }).catch(() => null);
+  const evalResult = await page.evaluate(
+    async ({ preferredProgramId, panelUrlHint }) => {
+      const form = document.querySelector('form.login');
+      if (!form) return { ok: false, reason: 'no_form' };
+
+      const email = form.querySelector('[name="email"]')?.value ?? '';
+      const mode = form.querySelector('[name="login_mode"]')?.value ?? '';
+      const hsf = form.querySelector('[name="login_hsf"]')?.value ?? '';
+
+      const body = new URLSearchParams({
+        login: '1',
+        check_programs: '1',
+        email,
+        mode,
+        hsf,
+      });
+
+      const res = await fetch(window.location.href, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString(),
+        credentials: 'same-origin',
+      });
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        return { ok: false, reason: 'bad_json', preview: text.slice(0, 200) };
+      }
+
+      if (data.error !== undefined) {
+        return { ok: false, reason: 'ajax_error', error: String(data.error) };
+      }
+
+      const keys = Object.keys(data);
+      if (keys.length === 0) {
+        return { ok: false, reason: 'no_programs' };
+      }
+
+      let chosenId = null;
+      const pref = (preferredProgramId || '').trim();
+      if (keys.length === 1) {
+        chosenId = data[keys[0]].id;
+      } else if (pref) {
+        for (const k of keys) {
+          if (String(data[k].id) === pref) {
+            chosenId = data[k].id;
+            break;
+          }
+        }
+        if (chosenId == null) {
+          return { ok: false, reason: 'pref_not_found', count: keys.length };
+        }
+      } else {
+        const m = (panelUrlHint || '').match(/\/af-(\d+)\//i);
+        const af = m ? m[1] : null;
+        if (af) {
+          for (const k of keys) {
+            const u = String(data[k].url || '');
+            if (u.includes(`af-${af}`) || u.includes(`/${af}/`)) {
+              chosenId = data[k].id;
+              break;
+            }
+          }
+        }
+        if (chosenId == null) {
+          return { ok: false, reason: 'multi_program', count: keys.length };
+        }
+      }
+
+      const hid = form.querySelector('[name="user_affiliate_program_id"]');
+      if (hid) hid.value = String(chosenId);
+      form.submit();
+      return { ok: true, submitted: true };
+    },
+    { preferredProgramId: userAffiliateProgramId || '', panelUrlHint: loginUrlHint || '' }
+  );
+  await navPromise;
+  return evalResult;
+}
+
+/**
  * Solves reCAPTCHA using @2captcha/captcha-solver and injects token + submits login.
  * @param {import('puppeteer').Page} page - Puppeteer page
  * @param {string} apiKey - 2Captcha API key
+ * @param {{ userAffiliateProgramId?: string, loginUrlHint?: string, email?: string, password?: string }} [options]
  * @returns {Promise<boolean>} True if solved successfully
  */
-async function solve2Captcha(page, apiKey) {
+async function solve2Captcha(page, apiKey, options = {}) {
+  const { userAffiliateProgramId, loginUrlHint, email, password } = options;
   try {
-    const sitekey = await page.evaluate(() => {
+    if (email && password) {
+      await page
+        .waitForSelector(
+          'input[name="password"], input[type="password"]',
+          { timeout: 10000 }
+        )
+        .catch(() => {});
+      await fillAffiliatlyCredentials(page, email, password);
+      await sleep(300);
+    }
+
+    let sitekey = await page.evaluate(() => {
       const el = document.querySelector('.g-recaptcha, [data-sitekey]');
       return el?.getAttribute('data-sitekey') || null;
     });
+
+    if (!sitekey) {
+      console.log('   ⏳ No sitekey yet — waiting for widget again...');
+      await waitForRecaptchaWidget(page, RECAPTCHA_WIDGET_TIMEOUT_MS);
+      sitekey = await page.evaluate(() => {
+        const el = document.querySelector('.g-recaptcha, [data-sitekey]');
+        return el?.getAttribute('data-sitekey') || null;
+      });
+    }
 
     if (!sitekey) {
       console.log('   Could not find reCAPTCHA sitekey');
@@ -514,21 +1006,182 @@ async function solve2Captcha(page, apiKey) {
 
     console.log(`   ✅ Got CAPTCHA solution!`);
 
+    // #region agent log
+    agentDebugLog({
+      hypothesisId: 'H5',
+      location: 'scraper.js:solve2Captcha',
+      message: '2Captcha task context',
+      data: {
+        websiteURL,
+        sitekeyLen: sitekey.length,
+        sitekeyPrefix: sitekey.slice(0, 12),
+        tokenLen: token.length,
+      },
+    });
+    // #endregion
+
     const callbackInvoked = await injectRecaptchaToken(page, token);
-    console.log(`   ${callbackInvoked ? '✅ Callback invoked' : '⚠️ No callback found, token set in textarea only'}`);
+    console.log(
+      callbackInvoked
+        ? '   ✅ reCAPTCHA site callback invoked'
+        : '   ⚠️ No callback found, token set in textarea only'
+    );
 
-    await sleep(500);
-
-    // Click submit after solving captcha
-    const loginBtn = await findSelector(page, [
-      'button[type="submit"]',
-      'input[type="submit"]',
-      'form button',
-    ]);
-    if (loginBtn) {
-      await page.click(loginBtn);
-      await sleep(3000);
+    // #region agent log
+    {
+      const snap = await page.evaluate(() => {
+        const form = document.querySelector('form.login_form') || document.querySelector('form.login');
+        const ta = document.querySelector('#g-recaptcha-response');
+        return {
+          textareaInLoginForm: !!(form && ta && form.contains(ta)),
+          formFieldCount: form ? form.querySelectorAll('[name="g-recaptcha-response"]').length : 0,
+        };
+      });
+      agentDebugLog({
+        hypothesisId: 'POST-FIX',
+        location: 'scraper.js:after-inject',
+        message: 'g-recaptcha field associated with form.login',
+        data: snap,
+      });
     }
+    // #endregion
+
+    await sleep(1500);
+
+    // Main site: click runs preventDefault → async check_programs → form.submit(). Register navigation
+    // before the click so we don't miss the load (click-then-wait races and loses navigation).
+    const loginBtnSelector =
+      (await page.$('#login_into_account')) ? '#login_into_account' : await findSelector(page, [
+        'button[type="submit"]',
+        'input[type="submit"]',
+      ]);
+
+    if (loginBtnSelector) {
+      await page.evaluate((sel) => {
+        const btn = document.querySelector(sel);
+        if (btn) btn.scrollIntoView({ block: 'center', inline: 'center' });
+      }, loginBtnSelector);
+      await sleep(300);
+    }
+
+    if (loginBtnSelector) {
+      await Promise.all([
+        page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 }).catch(() => null),
+        page.click(loginBtnSelector),
+      ]);
+      await sleep(1500);
+    }
+
+    let stillOnLogin = await page.evaluate(() => {
+      return document.querySelector('input[type="password"]') !== null;
+    });
+    if (!stillOnLogin) {
+      console.log('   ✅ Login submit succeeded after CAPTCHA solve');
+      return true;
+    }
+
+    const hasMainSiteAffiliateForm = await pageHasMainAffiliatlyLoginForm(page);
+    if (hasMainSiteAffiliateForm) {
+      console.log('   🔁 Retrying main-site login via check_programs + submit (same as site JS)...');
+      const cpResult = await submitAffiliatlyCheckProgramsThenForm(page, {
+        userAffiliateProgramId,
+        loginUrlHint,
+      });
+      await sleep(1500);
+      stillOnLogin = await page.evaluate(() => document.querySelector('input[type="password"]') !== null);
+      if (!stillOnLogin) {
+        console.log('   ✅ Login submit succeeded after CAPTCHA solve');
+        return true;
+      }
+      if (cpResult?.reason === 'multi_program') {
+        console.log(
+          `   ⚠️ Multiple affiliate programs (${cpResult.count}). Set AFFILIATLY_USER_AFFILIATE_PROGRAM_ID or AFFILIATLY_LOGIN_URL (e.g. …/af-106821/affiliate.panel).`
+        );
+      } else if (cpResult?.reason === 'no_programs') {
+        console.log('   ⚠️ check_programs found no programs for this email on the generic affiliates login.');
+      } else if (cpResult?.reason === 'ajax_error' && cpResult.error) {
+        console.log(`   ⚠️ check_programs: ${cpResult.error}`);
+      } else if (cpResult?.reason === 'pref_not_found') {
+        console.log(
+          `   ⚠️ AFFILIATLY_USER_AFFILIATE_PROGRAM_ID did not match any program (options: ${cpResult.count}).`
+        );
+      }
+      // Do not native-submit form.login here — it POSTs without program id and shows "Wrong email and/or password".
+    } else {
+      // Store panel / other: synthetic submit + native submit
+      console.log('   🔁 Dispatching submit event so form handler runs with token...');
+      const submitEventDispatched = await page.evaluate(() => {
+        const form = document.querySelector('form.login_form') || document.querySelector('form.login') || document.querySelector('form');
+        const btn = document.querySelector('button[type="submit"]') || document.querySelector('input[type="submit"]');
+        if (form && btn) {
+          const ev = new SubmitEvent('submit', { bubbles: true, cancelable: true, submitter: btn });
+          form.dispatchEvent(ev);
+          return true;
+        }
+        return false;
+      });
+      if (submitEventDispatched) {
+        await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
+        await sleep(2000);
+        stillOnLogin = await page.evaluate(() => document.querySelector('input[type="password"]') !== null);
+        if (!stillOnLogin) {
+          console.log('   ✅ Submit event triggered login');
+          return true;
+        }
+      }
+
+      console.log('   🔁 Trying native form.submit()...');
+      const formSubmitted = await page.evaluate(() => {
+        const form = document.querySelector('form.login_form') || document.querySelector('form.login') || document.querySelector('form');
+        if (form) {
+          form.submit();
+          return true;
+        }
+        return false;
+      });
+      if (formSubmitted) {
+        await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
+        await sleep(2000);
+      }
+
+      stillOnLogin = await page.evaluate(() => document.querySelector('input[type="password"]') !== null);
+      if (!stillOnLogin) {
+        console.log('   ✅ form.submit() succeeded after CAPTCHA solve');
+      } else {
+        console.log('   ⚠️ Still on login page after CAPTCHA solve + form submit');
+      }
+    }
+
+    // #region agent log
+    {
+      const postFail = await page.evaluate(() => {
+        const errEls = [...document.querySelectorAll('.error, .alert-danger, .alert, .login-error, [class*="error"]')];
+        const errors = errEls.map((e) => (e.textContent || '').trim().slice(0, 300)).filter(Boolean);
+        const forms = [...document.querySelectorAll('form')].map((f, i) => ({
+          i,
+          action: (f.action || '').slice(0, 120),
+        }));
+        return {
+          href: location.href,
+          title: document.title,
+          hasPasswordField: document.querySelector('input[type="password"]') !== null,
+          errors,
+          forms,
+        };
+      });
+      agentDebugLog({
+        hypothesisId: 'H3-H4',
+        location: 'scraper.js:solve2Captcha:after-submit',
+        message: 'After CAPTCHA strategies: URL, errors, forms',
+        data: {
+          pageUrl: page.url(),
+          stillOnLogin,
+          callbackInvoked,
+          ...postFail,
+        },
+      });
+    }
+    // #endregion
 
     return true;
   } catch (error) {
@@ -929,7 +1582,7 @@ export async function debugPageStructure({ email, password }) {
   });
 
   try {
-    await page.goto(LOGIN_URL, { waitUntil: 'networkidle2', timeout: 60000 });
+    await page.goto(DEFAULT_LOGIN_URL, { waitUntil: 'networkidle2', timeout: 60000 });
     console.log('🔍 Browser opened for debugging.');
     console.log('   Log in manually and navigate to the Commissions page.');
     console.log('   Watch the console for API calls.');
