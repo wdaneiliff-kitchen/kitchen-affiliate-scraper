@@ -56,6 +56,7 @@ These 22 columns are written by the shared transformer (`packages/shared/src/tra
 | `sixzero` | Six Zero | UpPromote | `uppromote` |
 | `paddletek` | Paddletek Pickleball | Shortly | `shortly` |
 | `goaffpro-forwrd` | GoAffPro (Forwrd) | GoAffPro | `goaffpro` |
+| `franklin` | Franklin | Impact | `impact` |
 
 ---
 
@@ -106,6 +107,10 @@ Similarly, `DATETIME_ADD` requires a DATETIME first argument, not TEXT — so
 1. `order_date` type = Text (so the raw string is preserved)
 2. `PARSE_DATETIME` (converts the text to DATETIME for `DATETIME_ADD`)
 
+Use `order_date_local` as the report's date range dimension for charts and controls.
+Using raw `order_date` caused tables and dropdown controls to appear blank even though
+the underlying sheet data was present.
+
 ---
 
 ## Dashboard Structure
@@ -116,7 +121,7 @@ Similarly, `DATETIME_ADD` requires a DATETIME first argument, not TEXT — so
 
 | Control | Connected Field | Notes |
 |---------|----------------|-------|
-| Date range picker | `order_date` | Default: last 2 days |
+| Date range picker | `order_date_local` | Default: last 2 days |
 | Advertiser dropdown | `advertiser_name` or `advertiser_id` | Filter by brand |
 | Timezone offset | `timezone_offset` | UTC offset parameter/field |
 | Order Status | `status` | Filter by pending/approved/declined |
@@ -136,14 +141,15 @@ Similarly, `DATETIME_ADD` requires a DATETIME first argument, not TEXT — so
 | `advertiser_url` | # of Sales | Total Sales | Total Commission |
 
 - Drill down enabled, default level: `advertiser_url`
-- Date range dimension: `order_date`
+- Date range dimension: `order_date_local`
 
 ---
 
 ## Important Notes
 
 - **All dates are UTC.** The scrapers normalize all dates to UTC before upload.
-  Use the `order_date_local` calculated field to display local times.
+  Use the `order_date_local` calculated field for both display and the report's
+  date range dimension.
 - **Amounts are in cents.** Use the `sale_dollars` and `commission_dollars`
   calculated fields for human-readable dollar values.
 - **`timezone_offset` is not in the source data.** It must be defined as a Looker
