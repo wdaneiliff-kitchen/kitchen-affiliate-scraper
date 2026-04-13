@@ -12,6 +12,11 @@
  * - Vatic
  * - Gruvn
  * - Six Zero
+ * - Neonic
+ * - Chorus
+ * - Thrive
+ * - Mark
+ * - Gherkin
  *
  * Each brand has its own UpPromote shop URL and credentials.
  */
@@ -45,6 +50,11 @@ const ACCOUNT_BASE_URLS = {
   vatic: 'https://af.uppromote.com/vatic-pro',
   gruvn: 'https://af.uppromote.com/gruvn',
   sixzero: 'https://af.uppromote.com/six-zero-7668',
+  neonic: 'https://af.uppromote.com/neonic-pickleball',
+  chorus: 'https://af.uppromote.com/647c98-4',
+  thrive: 'https://af.uppromote.com/thrive-pickleball',
+  mark: 'https://af.uppromote.com/495311-2',
+  gherkin: 'https://af.uppromote.com/GherkinUSA',
 };
 
 function resolveBaseUrl(accountName) {
@@ -124,11 +134,46 @@ export function getAccount(name) {
       advertiserId: 'sixzero',
       advertiserName: 'Six Zero',
     },
+    neonic: {
+      email: resolveCredential('neonic', 'EMAIL'),
+      password: resolveCredential('neonic', 'PASSWORD'),
+      baseUrl: resolveBaseUrl('neonic'),
+      advertiserId: 'neonic',
+      advertiserName: 'Neonic',
+    },
+    chorus: {
+      email: resolveCredential('chorus', 'EMAIL'),
+      password: resolveCredential('chorus', 'PASSWORD'),
+      baseUrl: resolveBaseUrl('chorus'),
+      advertiserId: 'chorus',
+      advertiserName: 'Chorus',
+    },
+    thrive: {
+      email: resolveCredential('thrive', 'EMAIL'),
+      password: resolveCredential('thrive', 'PASSWORD'),
+      baseUrl: resolveBaseUrl('thrive'),
+      advertiserId: 'thrive',
+      advertiserName: 'Thrive',
+    },
+    mark: {
+      email: resolveCredential('mark', 'EMAIL'),
+      password: resolveCredential('mark', 'PASSWORD'),
+      baseUrl: resolveBaseUrl('mark'),
+      advertiserId: 'mark',
+      advertiserName: 'Mark',
+    },
+    gherkin: {
+      email: resolveCredential('gherkin', 'EMAIL'),
+      password: resolveCredential('gherkin', 'PASSWORD'),
+      baseUrl: resolveBaseUrl('gherkin'),
+      advertiserId: 'gherkin',
+      advertiserName: 'Gherkin',
+    },
   };
   return accounts[name];
 }
 
-export const ACCOUNT_NAMES = ['luzz', 'honolulu', 'holbrook', 'diadem', 'pickleballapes', 'udrippin', '11six24', 'vatic', 'gruvn', 'sixzero'];
+export const ACCOUNT_NAMES = ['luzz', 'honolulu', 'holbrook', 'diadem', 'pickleballapes', 'udrippin', '11six24', 'vatic', 'gruvn', 'sixzero', 'neonic', 'chorus', 'thrive', 'mark', 'gherkin'];
 
 // Default account
 export const DEFAULT_ACCOUNT = 'luzz';

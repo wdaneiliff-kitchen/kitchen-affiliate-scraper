@@ -14,6 +14,11 @@ Scrapes commission/transaction data from UpPromote affiliate dashboard and uploa
 - **Vatic**
 - **Gruvn**
 - **Six Zero**
+- **Neonic**
+- **Chorus**
+- **Thrive**
+- **Mark**
+- **Gherkin**
 
 ### Quick start: LUZZ
 
@@ -116,6 +121,11 @@ pnpm uppromote -- --account=11six24
 pnpm uppromote -- --account=vatic
 pnpm uppromote -- --account=gruvn
 pnpm uppromote -- --account=sixzero
+pnpm uppromote -- --account=neonic
+pnpm uppromote -- --account=chorus
+pnpm uppromote -- --account=thrive
+pnpm uppromote -- --account=mark
+pnpm uppromote -- --account=gherkin
 
 # Scrape + upload ALL brands
 pnpm uppromote:all
@@ -142,6 +152,11 @@ node src/index.js --account=11six24
 node src/index.js --account=vatic
 node src/index.js --account=gruvn
 node src/index.js --account=sixzero
+node src/index.js --account=neonic
+node src/index.js --account=chorus
+node src/index.js --account=thrive
+node src/index.js --account=mark
+node src/index.js --account=gherkin
 
 # All accounts
 node src/index.js --account=all
@@ -171,7 +186,7 @@ node src/index.js --create-sheet
 | Column | Required | Format | Description |
 |--------|----------|--------|-------------|
 | transaction_id | Yes | Integer | Unique UpPromote referral ID |
-| advertiser_id | Yes | String | Brand slug (luzz, honolulu, holbrook, diadem, pickleballapes, udrippin, 11six24, vatic, gruvn, sixzero) |
+| advertiser_id | Yes | String | Brand slug (luzz, honolulu, holbrook, diadem, pickleballapes, udrippin, 11six24, vatic, gruvn, sixzero, neonic, chorus, thrive, mark, gherkin) |
 | advertiser_name | Yes | String | Brand display name |
 | order_date | Yes | Y-m-d H:i:s | Order creation timestamp |
 | currency_id | Yes | ISO 4217 | 3-letter code (USD, EUR, etc.) |
