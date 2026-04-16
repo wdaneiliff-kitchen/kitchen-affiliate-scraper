@@ -7,7 +7,171 @@ import {
 } from '@kitchen/shared/scraper-base';
 
 const LOGIN_URL = 'https://affiliates.socialsnowball.io/affiliate/login';
-const PAYOUTS_URL = 'https://affiliates.socialsnowball.io/affiliate/dashboard/payouts/unpaid?page=1';
+
+const AFFILIATE_ORIGIN = 'https://affiliates.socialsnowball.io';
+const DASHBOARD_BASE = `${AFFILIATE_ORIGIN}/affiliate/dashboard`;
+
+/**
+ * Pick affiliate row id for URL `/partnerships/{id}/payouts/...` (matches dashboard API `affiliates[].id`).
+ */
+function pickPartnershipAffiliateId(affiliates, merchantName) {
+  if (!Array.isArray(affiliates) || affiliates.length === 0) return null;
+  const needle = (merchantName || '').trim().toLowerCase();
+  if (needle) {
+    const match = affiliates.find((row) => {
+      const hay = JSON.stringify(row).toLowerCase();
+      return hay.includes(needle);
+    });
+    if (match?.id != null) return String(match.id);
+  }
+  const first = affiliates[0];
+  return first?.id != null ? String(first.id) : null;
+}
+
+/** True when URL is the affiliates list (not `/affiliates/:id/...`). */
+function isAffiliatesListApiUrl(url) {
+  try {
+    const { pathname } = new URL(url);
+    return pathname === '/api/affiliate/affiliates';
+  } catch {
+    return /\/api\/affiliate\/affiliates(?:\?|$)/i.test(url);
+  }
+}
+
+async function tryResolvePartnershipIdFromDom(page) {
+  return page.evaluate(() => {
+    for (const a of document.querySelectorAll('a[href]')) {
+      const h = a.getAttribute('href') || '';
+      const m = h.match(/\/partnerships\/(\d+)(?:\/|$)/);
+      if (m) return m[1];
+    }
+    return null;
+  });
+}
+
+function partnershipIdFromBrowserUrl(pageUrl) {
+  const m = String(pageUrl).match(/\/partnerships\/(\d+)(?:\/|$)/);
+  return m ? m[1] : null;
+}
+
+/**
+ * Real payouts UI: `/dashboard/partnerships/{id}/payouts/unpaid|paid` (flat `/payouts` 404s).
+ * @param {string|null|undefined} partnershipId
+ */
+function payoutsDirectUrlCandidates(partnershipId) {
+  if (partnershipId) {
+    const base = `${DASHBOARD_BASE}/partnerships/${partnershipId}/payouts`;
+    return [
+      `${base}/unpaid?page=1`,
+      `${base}/paid?page=1`,
+    ];
+  }
+  const flat = `${DASHBOARD_BASE}/payouts`;
+  return [
+    `${DASHBOARD_BASE}/partnerships/payouts`,
+    `${DASHBOARD_BASE}/partnerships/payouts?page=1`,
+    `${flat}`,
+    `${flat}?page=1`,
+    `${flat}/unpaid?page=1`,
+    `${flat}/paid?page=1`,
+  ];
+}
+
+/**
+ * From the partnerships list / overview, open the row for the configured merchant so sub-routes resolve.
+ */
+async function openPartnershipProgramRow(page, merchantName) {
+  const clicked = await page.evaluate((needle) => {
+    const n = needle.trim().toLowerCase();
+    if (!n) return false;
+    const nodes = Array.from(
+      document.querySelectorAll('a, button, [role="button"], [role="link"], tr, [class*="card"]')
+    );
+    const matches = [];
+    for (const el of nodes) {
+      const t = (el.textContent || '').trim().toLowerCase();
+      if (!t.includes(n)) continue;
+      if (t.length > 140) continue;
+      matches.push({ el, len: t.length });
+    }
+    if (matches.length === 0) return false;
+    matches.sort((a, b) => a.len - b.len);
+    matches[0].el.click();
+    return true;
+  }, merchantName);
+
+  if (!clicked) return false;
+
+  console.log(`   📎 Opened program row for: ${merchantName}`);
+  await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 45000 }).catch(() => {});
+  await sleep(4000);
+  return true;
+}
+
+async function bodyHasPageNotFound(page) {
+  return page.evaluate(() => (document.body?.innerText || '').includes('Page not found'));
+}
+
+/**
+ * Opens the affiliate payouts area via sidebar/link when possible, otherwise tries known dashboard URLs.
+ * @param {string|null|undefined} partnershipId — from `/api/affiliate/affiliates` or DOM
+ * @returns {{ payoutsLinkClicked: boolean, lastTriedUrl: string|null }}
+ */
+async function openAffiliatePayoutsView(page, partnershipId) {
+  const clickResult = await page.evaluate(() => {
+    const hrefMatch = document.querySelector(
+      'a[href*="payout" i], a[href*="payable" i], [role="link"][href*="payout" i]'
+    );
+    if (hrefMatch) {
+      hrefMatch.click();
+      return { clicked: true, kind: 'href-selector' };
+    }
+    const elements = Array.from(
+      document.querySelectorAll('a, button, [role="link"], [role="menuitem"], [role="tab"]')
+    );
+    for (const el of elements) {
+      const href = (el.getAttribute('href') || '').toLowerCase();
+      if (href.includes('payout') || href.includes('payable')) {
+        el.click();
+        return { clicked: true, kind: 'href-scan' };
+      }
+    }
+    for (const el of elements) {
+      const text = (el.textContent || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      if (!text || text.length > 52) continue;
+      if (text.includes('payout') || text.includes('payable')) {
+        el.click();
+        return { clicked: true, kind: 'text', text: text.slice(0, 60) };
+      }
+    }
+    return { clicked: false };
+  });
+
+  if (clickResult.clicked) {
+    console.log('   ✅ Clicked payouts navigation control');
+    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 45000 }).catch(() => {});
+    await sleep(4000);
+    if (!(await bodyHasPageNotFound(page))) {
+      return { payoutsLinkClicked: true, lastTriedUrl: page.url() };
+    }
+    console.log('   ⚠️ Navigation control led to not-found shell; trying direct URLs...');
+  } else {
+    console.log('   ⚠️ Could not find Payouts control in nav, trying direct URLs...');
+  }
+
+  let lastTriedUrl = null;
+  for (const url of payoutsDirectUrlCandidates(partnershipId)) {
+    lastTriedUrl = url;
+    console.log(`   🧭 Loading: ${url}`);
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
+    await sleep(4000);
+    if (!(await bodyHasPageNotFound(page))) {
+      return { payoutsLinkClicked: clickResult.clicked, lastTriedUrl: url };
+    }
+  }
+
+  return { payoutsLinkClicked: clickResult.clicked, lastTriedUrl };
+}
 
 /**
  * Scrapes payout data from SocialSnowball affiliate dashboard.
@@ -36,6 +200,8 @@ export async function scrapePayouts({ email, password, merchantName, headless = 
   const page = await createStealthPage(browser);
 
   const apiResponses = [];
+  /** Numeric id for routes like `/partnerships/{id}/payouts/unpaid` — from GET /api/affiliate/affiliates. */
+  let resolvedPartnershipId = null;
 
   // Set up network interception
   await setupNetworkInterception(page, {
@@ -43,10 +209,17 @@ export async function scrapePayouts({ email, password, merchantName, headless = 
       // Try to identify payout/commission data responses
       let records = null;
 
+      if (isAffiliatesListApiUrl(url) && Array.isArray(data?.payload)) {
+        const picked = pickPartnershipAffiliateId(data.payload, merchantName);
+        if (picked) resolvedPartnershipId = picked;
+      }
+
       // Handle various possible response structures
       // SocialSnowball uses { payload: [...] } structure
       if (data.payload && Array.isArray(data.payload)) {
         records = data.payload;
+      } else if (data.payload?.data && Array.isArray(data.payload.data)) {
+        records = data.payload.data;
       } else if (data.data?.data && Array.isArray(data.data.data)) {
         records = data.data.data;  // Nested: { data: { data: [...] } }
       } else if (Array.isArray(data.data)) {
@@ -68,7 +241,9 @@ export async function scrapePayouts({ email, password, merchantName, headless = 
         urlLower.includes('payouts/paid') ||
         urlLower.includes('search-payables') ||
         urlLower.includes('search-payouts') ||
-        urlLower.includes('payables');
+        urlLower.includes('payables') ||
+        urlLower.includes('monetary-payables') ||
+        urlLower.includes('monetary_payables');
 
       // Exclude notification endpoints
       const isExcluded = urlLower.includes('notification');
@@ -208,32 +383,41 @@ export async function scrapePayouts({ email, password, merchantName, headless = 
       console.log(`   Current URL after merchant selection: ${currentUrl}`);
     }
 
+    // Step 5b: Partnership id for payout URLs (`/partnerships/{id}/payouts/unpaid` — see affiliates[].id)
+    console.log('🔗 Resolving partnership program id for payout routes...');
+    for (let i = 0; i < 30 && !resolvedPartnershipId; i++) {
+      await sleep(500);
+    }
+    if (!resolvedPartnershipId) {
+      console.log('   ℹ️ Loading partnerships index to capture GET /api/affiliate/affiliates...');
+      await page.goto(`${DASHBOARD_BASE}/partnerships`, { waitUntil: 'networkidle2', timeout: 60000 }).catch(() => {});
+      await sleep(5000);
+    }
+    for (let i = 0; i < 20 && !resolvedPartnershipId; i++) {
+      await sleep(500);
+    }
+    if (!resolvedPartnershipId) {
+      await openPartnershipProgramRow(page, merchantName);
+      resolvedPartnershipId =
+        partnershipIdFromBrowserUrl(page.url()) || (await tryResolvePartnershipIdFromDom(page));
+    }
+
+    if (resolvedPartnershipId) {
+      console.log(`   ✅ Partnership program id: ${resolvedPartnershipId}`);
+    } else {
+      console.log('   ⚠️ Could not resolve partnership id from API or page — payout URLs may 404');
+    }
+
     // Step 6: Navigate to Payouts page
     console.log('📊 Navigating to Payouts page...');
 
-    // Try clicking the Payouts link in navigation first
-    const payoutsLinkClicked = await page.evaluate(() => {
-      const links = Array.from(document.querySelectorAll('a'));
-      const payoutsLink = links.find(a =>
-        a.textContent.trim().toLowerCase().includes('payout') ||
-        a.href?.includes('payout')
-      );
-      if (payoutsLink) {
-        payoutsLink.click();
-        return true;
-      }
-      return false;
-    });
+    const { lastTriedUrl } = await openAffiliatePayoutsView(page, resolvedPartnershipId);
 
-    if (payoutsLinkClicked) {
-      console.log('   ✅ Clicked Payouts link');
-      await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {});
-    } else {
-      console.log('   ⚠️ Could not find Payouts link, navigating directly...');
-      await page.goto(PAYOUTS_URL, { waitUntil: 'networkidle2', timeout: 60000 });
+    if (lastTriedUrl && (await bodyHasPageNotFound(page))) {
+      console.log(`   ⚠️ Still on not-found shell after candidates (last: ${lastTriedUrl})`);
     }
 
-    // Wait for the page to load data (Unpaid tab loads by default)
+    // Wait for the page to load data (default tab varies by account)
     console.log('⏳ Waiting for Unpaid tab data to load...');
     await sleep(5000);
 
@@ -243,27 +427,59 @@ export async function scrapePayouts({ email, password, merchantName, headless = 
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
     await sleep(2000);
 
-    // Now click on the "Paid" tab to also capture paid payouts
-    console.log('📊 Clicking on Paid tab to capture paid payouts...');
+    // Click status tabs so both paid history and Enhance "Ready" payables load (APIs differ by tab)
+    console.log('📊 Clicking payout status tabs (Paid / Ready) to capture all rows...');
     const paidTabClicked = await page.evaluate(() => {
-      // Look for the Paid tab/link
       const tabs = Array.from(document.querySelectorAll('a, button, [role="tab"]'));
-      const paidTab = tabs.find(el => {
-        const text = el.textContent.trim().toLowerCase();
-        return text === 'paid' || text.includes('paid payout');
-      });
+      const pick = (match) =>
+        tabs.find((el) => {
+          const text = (el.textContent || '').trim().toLowerCase().replace(/\s+/g, ' ');
+          return match(text);
+        });
+
+      const paidTab = pick(
+        (text) =>
+          text === 'paid' ||
+          text === 'paid out' ||
+          (text.includes('paid') && text.length <= 24)
+      );
       if (paidTab) {
         paidTab.click();
-        return true;
+        return 'paid';
+      }
+      const readyTab = pick(
+        (text) => text === 'ready' || text.includes('ready for payout') || text.includes('ready to')
+      );
+      if (readyTab) {
+        readyTab.click();
+        return 'ready';
       }
       return false;
     });
 
     if (paidTabClicked) {
-      console.log('   ✅ Clicked Paid tab');
-      await sleep(5000); // Wait for paid data to load
+      console.log(`   ✅ Clicked "${paidTabClicked}" tab`);
+      await sleep(5000);
     } else {
-      console.log('   ⚠️ Could not find Paid tab');
+      console.log('   ⚠️ Could not find Paid / Ready tab (default view may be enough)');
+    }
+
+    const secondTabClicked = await page.evaluate((first) => {
+      const tabs = Array.from(document.querySelectorAll('a, button, [role="tab"]'));
+      const pickPaid = tabs.find((el) => {
+        const text = (el.textContent || '').trim().toLowerCase().replace(/\s+/g, ' ');
+        return text === 'paid' || (text.includes('paid') && text.length <= 24);
+      });
+      if (first === 'ready' && pickPaid) {
+        pickPaid.click();
+        return 'paid';
+      }
+      return false;
+    }, paidTabClicked);
+
+    if (secondTabClicked) {
+      console.log('   ✅ Clicked "paid" tab after ready');
+      await sleep(5000);
     }
 
     // Take a screenshot to debug the page structure
@@ -414,6 +630,7 @@ async function fetchAllPayouts(capturedResponses, existingPayouts = []) {
  */
 function extractRecordsFromResponse(data) {
   if (data.payload && Array.isArray(data.payload)) return data.payload;
+  if (data.payload?.data && Array.isArray(data.payload.data)) return data.payload.data;
   if (data.data?.data && Array.isArray(data.data.data)) return data.data.data;
   if (Array.isArray(data.data)) return data.data;
   if (data.payouts && Array.isArray(data.payouts)) return data.payouts;
@@ -480,7 +697,11 @@ function extractFromApiResponses(apiResponses) {
     if (records && Array.isArray(records)) {
       const urlLower = url.toLowerCase();
       const isPaidEndpoint = looksLikePaidEndpoint(url);
-      const isUnpaidEndpoint = urlLower.includes('payouts/unpaid') || urlLower.includes('search-payables');
+      const isUnpaidEndpoint =
+        urlLower.includes('payouts/unpaid') ||
+        urlLower.includes('search-payables') ||
+        urlLower.includes('monetary-payables') ||
+        urlLower.includes('monetary_payables');
 
       function resolveStatus(record) {
         if (isPaidEndpoint) return 'paid';
