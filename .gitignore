@@ -16,3 +16,10 @@ credentials.json
 
 # Exported payouts and commissions (date-stamped JSON, e.g. *-2026-01-30.json)
 **/*-????-??-??.json
+
+# Scraper debug / error artifacts (Playwright screenshots, diagnostic dumps)
+**/error-screenshot-*.png
+**/uppromote-diagnostic-*.json
+**/affiliatly-error-*.png
+**/debug-uppromote-page.png
+**/affiliatly-login-page.png
