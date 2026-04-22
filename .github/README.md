@@ -4,7 +4,7 @@
 
 Workflow: [`workflows/scrape-and-upload.yml`](workflows/scrape-and-upload.yml)
 
-- **Schedule:** Daily at 08:00 UTC (edit the `cron` in the workflow to change it).
+- **Schedule:** Eight times daily on UTC hours `0, 2, 12, 14, 16, 18, 20, 22` (see the `cron` and comments in [`workflows/scrape-and-upload.yml`](workflows/scrape-and-upload.yml)).
 - **Manual run:** Actions → "Scrape and upload commissions" → "Run workflow".
 
 ### Required secrets
