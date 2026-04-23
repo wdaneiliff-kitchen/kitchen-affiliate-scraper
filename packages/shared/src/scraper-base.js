@@ -1,5 +1,8 @@
 import puppeteer from 'puppeteer';
 import { execSync } from 'child_process';
+import { mkdtempSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 
 /** Simple sleep helper */
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -48,21 +51,18 @@ export async function findSelector(page, selectors) {
  * @returns {Promise<Browser>} Puppeteer browser instance
  */
 export async function launchBrowser({ headless = true } = {}) {
-  const executablePath = findSystemChrome();
-  if (executablePath) {
-    console.log(`🌐 Using system Chrome: ${executablePath}`);
-  }
+  const userDataDir = mkdtempSync(join(tmpdir(), 'puppeteer-profile-'));
 
   const browser = await puppeteer.launch({
     headless,
-    executablePath,
+    timeout: 60000,
+    userDataDir,
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-blink-features=AutomationControlled',
       '--disable-infobars',
       '--disable-dev-shm-usage',
-      '--disable-gpu',
       '--window-size=1920,1080',
     ],
     defaultViewport: { width: 1920, height: 1080 },

@@ -185,7 +185,7 @@ jobs:
           fi
 
       - name: Notify Slack
-        if: always() && env.SLACK_WEBHOOK_URL != ''
+        if: failure() && env.SLACK_WEBHOOK_URL != ''
         env:
           SCRAPE_OUTCOME: ${{ steps.scrape.outcome }}
           FAILED_SCRAPERS: ${{ steps.scrape.outputs.failed_scrapers }}

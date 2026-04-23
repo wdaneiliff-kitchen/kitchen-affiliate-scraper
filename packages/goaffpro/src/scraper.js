@@ -98,7 +98,6 @@ export async function scrapeCommissions({ email, password, headless = true }) {
       }
     } else {
       console.log('🔐 No saved session, logging in...');
-      await page.goto(LOGIN_URL, { waitUntil: 'networkidle2', timeout: 60000 });
       await performLogin(page, email, password);
     }
 
@@ -183,8 +182,33 @@ export async function scrapeCommissions({ email, password, headless = true }) {
 async function performLogin(page, email, password) {
   console.log('🔑 Filling login form...');
 
-  await page.goto(LOGIN_URL, { waitUntil: 'networkidle2', timeout: 60000 });
+  await page.goto(LOGIN_URL, { waitUntil: 'networkidle2', timeout: 60000 }).catch(err => {
+    if (!err.message.includes('detached')) throw err;
+  });
   await sleep(1500);
+
+  // Wait for any input to appear (React apps can render late)
+  const inputFound = await page.waitForSelector('input', { timeout: 15000 }).catch(() => null);
+  if (!inputFound) {
+    const html = await page.evaluate(() => document.body.innerHTML.slice(0, 3000));
+    console.log('🔍 Page HTML (no inputs found):\n', html);
+  } else {
+    const inputs = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('input')).map(i => ({
+        type: i.type, name: i.name, id: i.id, placeholder: i.placeholder, autocomplete: i.autocomplete,
+      }))
+    );
+    console.log('🔍 Inputs found on page:', JSON.stringify(inputs, null, 2));
+  }
+
+  // Wait for URL to settle on the login page (guard against post-render redirects)
+  await page.waitForFunction(
+    () => window.location.href.includes('login'),
+    { timeout: 10000 }
+  ).catch(() => {
+    console.log(`   ⚠️  URL after load: ${page.url()}`);
+  });
+  console.log(`   Current URL before typing: ${page.url()}`);
 
   // Fill email
   const emailSelector = await findSelector(page, [
@@ -192,6 +216,9 @@ async function performLogin(page, email, password) {
     'input[name="email"]',
     'input[placeholder*="mail" i]',
     'input[id*="email" i]',
+    'input[autocomplete="email"]',
+    'input[autocomplete="username"]',
+    'input[type="text"]',
   ]);
   if (!emailSelector) throw new Error('Could not find email input on login page');
   await page.click(emailSelector, { clickCount: 3 });
@@ -203,6 +230,7 @@ async function performLogin(page, email, password) {
     'input[name="password"]',
     'input[placeholder*="password" i]',
     'input[id*="password" i]',
+    'input[autocomplete="current-password"]',
   ]);
   if (!passwordSelector) throw new Error('Could not find password input on login page');
   await page.click(passwordSelector, { clickCount: 3 });
@@ -217,23 +245,29 @@ async function performLogin(page, email, password) {
   ]);
 
   if (submitSelector) {
+    console.log(`   🖱️  Clicking submit: ${submitSelector}`);
     await page.click(submitSelector);
   } else {
-    // Fallback: find a button with login/sign-in text
     const clicked = await page.evaluate(() => {
       const buttons = Array.from(document.querySelectorAll('button, [role="button"]'));
       const btn = buttons.find(el => /login|sign\s*in|log\s*in/i.test(el.textContent?.trim() || ''));
-      if (btn) { btn.click(); return true; }
-      return false;
+      if (btn) { btn.click(); return btn.textContent?.trim(); }
+      // Last resort: click the first button on the page
+      const first = buttons[0];
+      if (first) { first.click(); return `[fallback] ${first.textContent?.trim()}`; }
+      return null;
     });
     if (!clicked) throw new Error('Could not find login submit button');
+    console.log(`   🖱️  Clicked button: "${clicked}"`);
   }
 
   console.log('   ⏳ Waiting for dashboard redirect...');
   await Promise.race([
     page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }),
     sleep(15000),
-  ]).catch(() => {});
+  ]).catch(err => {
+    if (!err.message.includes('detached') && !err.message.includes('Navigation timeout')) throw err;
+  });
 
   await sleep(2000);
   console.log(`   Redirected to: ${page.url()}`);
