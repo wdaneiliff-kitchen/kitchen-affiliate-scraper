@@ -38,7 +38,7 @@ on:
     # 00:00 |  8:00 PM      | 7:00 PM | 6:00 PM  | 5:00 PM
     # 02:00 | 10:00 PM      | 9:00 PM | 8:00 PM  | 7:00 PM
     # (Times shift 1h later in local time during EST/CST/MST/PST winter months)
-    - cron: '0 0,2,12,14,16,18,20,22 * * *'
+    - cron: '0 0,2,4,6,8,10,12,14,16,18,20,22 * * *'
   workflow_dispatch:
 
 jobs:
