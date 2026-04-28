@@ -178,20 +178,20 @@ jobs:
           fi
 
       - name: Notify Slack
-        if: failure() && env.SLACK_WEBHOOK_URL != ''
+        if: (failure() || cancelled()) && env.SLACK_WEBHOOK_URL != ''
         env:
           SCRAPE_OUTCOME: ${{ steps.scrape.outcome }}
           FAILED_SCRAPERS: ${{ steps.scrape.outputs.failed_scrapers }}
         run: |
-          if [ "$SCRAPE_OUTCOME" = "success" ]; then
-            EMOJI=":white_check_mark:"
-            TEXT="Scrape and upload completed successfully."
+          if [ -z "$SCRAPE_OUTCOME" ] || [ "$SCRAPE_OUTCOME" = "cancelled" ]; then
+            EMOJI=":warning:"
+            TEXT="Run was cancelled by GitHub (temporary infrastructure issue). No scrapers ran — nothing to worry about, it will retry on the next scheduled run."
+          elif [ -n "$FAILED_SCRAPERS" ]; then
+            EMOJI=":x:"
+            TEXT="One or more scrapers failed: *${FAILED_SCRAPERS}*\nCheck the run log to see what went wrong."
           else
             EMOJI=":x:"
-            TEXT="Scrape and upload failed or was cancelled."
-            if [ -n "$FAILED_SCRAPERS" ]; then
-              TEXT="${TEXT}\nFailed: ${FAILED_SCRAPERS}"
-            fi
+            TEXT="A setup step failed before the scrapers could run. Check the run log for details."
           fi
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           payload=$(cat <<EOF
