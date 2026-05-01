@@ -14,6 +14,7 @@
 #   UPPROMOTE_NEONIC_EMAIL, UPPROMOTE_CHORUS_EMAIL         (per-account email overrides)
 #   UPPROMOTE_THRIVE_EMAIL, UPPROMOTE_MARK_EMAIL           (per-account email overrides)
 #   UPPROMOTE_GHERKIN_EMAIL                                (per-account email override)
+#   UPPROMOTE_PROTON_EMAIL                                 (per-account email override)
 #   UPPROMOTE_LUZZ_BASE_URL, UPPROMOTE_HONOLULU_BASE_URL, UPPROMOTE_DIADEM_BASE_URL  (optional, have hardcoded defaults)
 #   UPPROMOTE_HOLBROOK_BASE_URL, UPPROMOTE_PICKLEBALLAPES_BASE_URL                 (optional, have hardcoded defaults)
 #   AFFILIATLY_EMAIL, AFFILIATLY_PASSWORD
@@ -88,6 +89,7 @@ jobs:
             packages/uppromote/.cookies/thrive-cookies.json
             packages/uppromote/.cookies/mark-cookies.json
             packages/uppromote/.cookies/gherkin-cookies.json
+            packages/uppromote/.cookies/proton-cookies.json
           key: ${{ runner.os }}-session-cookies-v1-${{ github.run_id }}
           restore-keys: |
             ${{ runner.os }}-session-cookies-v1-
@@ -142,6 +144,7 @@ jobs:
           UPPROMOTE_THRIVE_EMAIL: ${{ secrets.UPPROMOTE_THRIVE_EMAIL }}
           UPPROMOTE_MARK_EMAIL: ${{ secrets.UPPROMOTE_MARK_EMAIL }}
           UPPROMOTE_GHERKIN_EMAIL: ${{ secrets.UPPROMOTE_GHERKIN_EMAIL }}
+          UPPROMOTE_PROTON_EMAIL: ${{ secrets.UPPROMOTE_PROTON_EMAIL }}
           AFFILIATLY_EMAIL: ${{ secrets.AFFILIATLY_EMAIL }}
           AFFILIATLY_PASSWORD: ${{ secrets.AFFILIATLY_PASSWORD }}
           GOAFFPRO_EMAIL: ${{ secrets.GOAFFPRO_EMAIL }}
@@ -232,6 +235,7 @@ jobs:
             packages/uppromote/.cookies/thrive-cookies.json
             packages/uppromote/.cookies/mark-cookies.json
             packages/uppromote/.cookies/gherkin-cookies.json
+            packages/uppromote/.cookies/proton-cookies.json
           key: ${{ runner.os }}-session-cookies-v1-${{ github.run_id }}
 
       - name: Delete session cookie caches older than 7 days

@@ -55,6 +55,7 @@ const ACCOUNT_BASE_URLS = {
   thrive: 'https://af.uppromote.com/thrive-pickleball',
   mark: 'https://af.uppromote.com/495311-2',
   gherkin: 'https://af.uppromote.com/GherkinUSA',
+  proton: 'https://af.uppromote.com/proton-sports-inc',
 };
 
 function resolveBaseUrl(accountName) {
@@ -169,11 +170,18 @@ export function getAccount(name) {
       advertiserId: 'gherkin',
       advertiserName: 'Gherkin',
     },
+    proton: {
+      email: resolveCredential('proton', 'EMAIL'),
+      password: resolveCredential('proton', 'PASSWORD'),
+      baseUrl: resolveBaseUrl('proton'),
+      advertiserId: 'proton',
+      advertiserName: 'Proton',
+    },
   };
   return accounts[name];
 }
 
-export const ACCOUNT_NAMES = ['luzz', 'honolulu', 'holbrook', 'diadem', 'pickleballapes', 'udrippin', '11six24', 'vatic', 'gruvn', 'sixzero', 'neonic', 'chorus', 'thrive', 'mark', 'gherkin'];
+export const ACCOUNT_NAMES = ['luzz', 'honolulu', 'holbrook', 'diadem', 'pickleballapes', 'udrippin', '11six24', 'vatic', 'gruvn', 'sixzero', 'neonic', 'chorus', 'thrive', 'mark', 'gherkin', 'proton'];
 
 // Default account
 export const DEFAULT_ACCOUNT = 'luzz';
