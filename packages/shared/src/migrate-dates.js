@@ -3,10 +3,7 @@ import { google } from 'googleapis';
 import { readFile } from 'fs/promises';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import dotenv from 'dotenv';
-
 const __dirname = dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: resolve(__dirname, '../../../.env') });
 
 const SHEET_NAME = 'Comissions';
 const DATE_COLS = [3, 8, 9, 10];
