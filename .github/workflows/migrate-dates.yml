@@ -30,4 +30,4 @@ jobs:
         env:
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
           GOOGLE_CREDENTIALS_PATH: ${{ github.workspace }}/credentials.json
-        run: node scripts/migrate-dates-to-central.js
+        run: pnpm --filter @kitchen/shared run migrate-dates

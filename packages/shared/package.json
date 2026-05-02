@@ -4,6 +4,9 @@
   "description": "Shared utilities for affiliate scrapers",
   "main": "src/index.js",
   "type": "module",
+  "scripts": {
+    "migrate-dates": "node src/migrate-dates.js"
+  },
   "exports": {
     ".": "./src/index.js",
     "./transformer": "./src/transformer.js",
