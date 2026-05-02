@@ -298,17 +298,22 @@ function hasTimezoneInfo(str) {
 }
 
 /**
- * Formats a Date object to Y-m-d H:i:s UTC string
+ * Formats a Date object to Y-m-d H:i:s in Central time (America/Chicago, handles CST/CDT automatically)
  */
 function formatDateComponents(date) {
-  const year = date.getUTCFullYear();
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(date.getUTCDate()).padStart(2, '0');
-  const hours = String(date.getUTCHours()).padStart(2, '0');
-  const minutes = String(date.getUTCMinutes()).padStart(2, '0');
-  const seconds = String(date.getUTCSeconds()).padStart(2, '0');
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Chicago',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
 
-  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+  const get = type => parts.find(p => p.type === type).value;
+  return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}:${get('second')}`;
 }
 
 /**
