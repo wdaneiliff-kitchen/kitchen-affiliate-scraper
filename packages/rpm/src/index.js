@@ -56,7 +56,8 @@ async function main() {
     const result = await appendDeltaRow({
       spreadsheetId: config.spreadsheetId,
       credentialsPath: config.credentialsPath,
-      sheetName: 'RPM Commissions',
+      trackingSheetName: 'RPM Commissions',
+      mainSheetName: 'Comissions',
       currentSales: stats.sales,
       currentEarned: stats.earned,
     });
