@@ -19,6 +19,7 @@
 #   UPPROMOTE_HOLBROOK_BASE_URL, UPPROMOTE_PICKLEBALLAPES_BASE_URL                 (optional, have hardcoded defaults)
 #   AFFILIATLY_EMAIL, AFFILIATLY_PASSWORD
 #   GOAFFPRO_EMAIL, GOAFFPRO_PASSWORD
+#   RPM_EMAIL, RPM_PASSWORD, RPM_GOOGLE_SHEET_ID
 #   GOOGLE_SHEET_ID
 #   GOOGLE_CREDENTIALS_JSON  (entire contents of your Google service account JSON key file)
 #   TWOCAPTCHA_API_KEY  (optional but recommended for unattended uppromote/affiliatly runs)
@@ -91,6 +92,7 @@ jobs:
             packages/uppromote/.cookies/mark-cookies.json
             packages/uppromote/.cookies/gherkin-cookies.json
             packages/uppromote/.cookies/proton-cookies.json
+            packages/rpm/.cookies/rpm-cookies.json
           key: ${{ runner.os }}-session-cookies-v1-${{ github.run_id }}
           restore-keys: |
             ${{ runner.os }}-session-cookies-v1-
@@ -150,6 +152,8 @@ jobs:
           AFFILIATLY_PASSWORD: ${{ secrets.AFFILIATLY_PASSWORD }}
           GOAFFPRO_EMAIL: ${{ secrets.GOAFFPRO_EMAIL }}
           GOAFFPRO_PASSWORD: ${{ secrets.GOAFFPRO_PASSWORD }}
+          RPM_EMAIL: ${{ secrets.RPM_EMAIL }}
+          RPM_PASSWORD: ${{ secrets.RPM_PASSWORD }}
           TWOCAPTCHA_API_KEY: ${{ secrets.TWOCAPTCHA_API_KEY }}
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
           GOOGLE_CREDENTIALS_PATH: ${{ github.workspace }}/credentials.json
@@ -174,6 +178,7 @@ jobs:
           run_scraper "uppromote"      pnpm uppromote:all
           run_scraper "affiliatly"     pnpm affiliatly
           run_scraper "goaffpro"       pnpm goaffpro
+          run_scraper "rpm"            pnpm rpm
 
           if [ -n "$FAILED" ]; then
             echo "failed_scrapers=$FAILED" >> "$GITHUB_OUTPUT"
@@ -237,6 +242,7 @@ jobs:
             packages/uppromote/.cookies/mark-cookies.json
             packages/uppromote/.cookies/gherkin-cookies.json
             packages/uppromote/.cookies/proton-cookies.json
+            packages/rpm/.cookies/rpm-cookies.json
           key: ${{ runner.os }}-session-cookies-v1-${{ github.run_id }}
 
       - name: Delete session cookie caches older than 7 days

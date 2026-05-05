@@ -17,7 +17,10 @@
     "affiliatly": "pnpm --filter @kitchen/affiliatly start",
     "affiliatly:scrape": "pnpm --filter @kitchen/affiliatly scrape",
     "goaffpro": "pnpm --filter @kitchen/goaffpro start",
-    "goaffpro:scrape": "pnpm --filter @kitchen/goaffpro scrape"
+    "goaffpro:scrape": "pnpm --filter @kitchen/goaffpro scrape",
+    "rpm": "pnpm --filter @kitchen/rpm start",
+    "rpm:scrape": "pnpm --filter @kitchen/rpm scrape",
+    "scraper": "gh workflow run scrape-and-upload.yml --repo wdaneiliff-kitchen/kitchen-affiliate-scraper"
   },
   "packageManager": "pnpm@9.14.2"
 }
