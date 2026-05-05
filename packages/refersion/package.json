@@ -1,0 +1,15 @@
+{
+  "name": "@kitchen/refersion",
+  "version": "1.0.0",
+  "description": "Scrape Refersion affiliate commissions and upload to Google Sheets",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "scrape": "node src/index.js --scrape-only"
+  },
+  "dependencies": {
+    "@kitchen/shared": "workspace:*",
+    "googleapis": "^128.0.0"
+  }
+}

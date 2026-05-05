@@ -93,6 +93,9 @@ jobs:
             packages/uppromote/.cookies/gherkin-cookies.json
             packages/uppromote/.cookies/proton-cookies.json
             packages/rpm/.cookies/rpm-cookies.json
+            packages/refersion/.cookies/gearbox-cookies.json
+            packages/refersion/.cookies/erne-cookies.json
+            packages/refersion/.cookies/volair-cookies.json
           key: ${{ runner.os }}-session-cookies-v1-${{ github.run_id }}
           restore-keys: |
             ${{ runner.os }}-session-cookies-v1-
@@ -179,6 +182,7 @@ jobs:
           run_scraper "affiliatly"     pnpm affiliatly
           run_scraper "goaffpro"       pnpm goaffpro
           run_scraper "rpm"            pnpm rpm
+          run_scraper "refersion"      pnpm refersion
 
           if [ -n "$FAILED" ]; then
             echo "failed_scrapers=$FAILED" >> "$GITHUB_OUTPUT"
@@ -243,6 +247,9 @@ jobs:
             packages/uppromote/.cookies/gherkin-cookies.json
             packages/uppromote/.cookies/proton-cookies.json
             packages/rpm/.cookies/rpm-cookies.json
+            packages/refersion/.cookies/gearbox-cookies.json
+            packages/refersion/.cookies/erne-cookies.json
+            packages/refersion/.cookies/volair-cookies.json
           key: ${{ runner.os }}-session-cookies-v1-${{ github.run_id }}
 
       - name: Delete session cookie caches older than 7 days

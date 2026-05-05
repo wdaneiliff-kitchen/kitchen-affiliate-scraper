@@ -20,6 +20,8 @@
     "goaffpro:scrape": "pnpm --filter @kitchen/goaffpro scrape",
     "rpm": "pnpm --filter @kitchen/rpm start",
     "rpm:scrape": "pnpm --filter @kitchen/rpm scrape",
+    "refersion": "pnpm --filter @kitchen/refersion start",
+    "refersion:scrape": "pnpm --filter @kitchen/refersion scrape",
     "scraper": "gh workflow run scrape-and-upload.yml --repo wdaneiliff-kitchen/kitchen-affiliate-scraper"
   },
   "packageManager": "pnpm@9.14.2"

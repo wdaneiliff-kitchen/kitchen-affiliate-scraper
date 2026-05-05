@@ -1,0 +1,62 @@
+[
+  {
+    "name": "refersion_csrf_cookie",
+    "value": "51a54f24711b92d66fd29ca39a3172bc",
+    "domain": ".refersion.com",
+    "path": "/",
+    "expires": 1778032016.578754,
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "None"
+  },
+  {
+    "name": "_mkto_trk",
+    "value": "id:489-UGL-390&token:_mch-refersion.com-b8225c5bbae10c980e960b367887af5",
+    "domain": ".refersion.com",
+    "path": "/",
+    "expires": 1809284609.132768,
+    "httpOnly": false,
+    "secure": false,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "_gcl_au",
+    "value": "1.1.1705741517.1774724609",
+    "domain": ".refersion.com",
+    "path": "/",
+    "expires": 1782500608,
+    "httpOnly": false,
+    "secure": false,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "affiliate_language",
+    "value": "EN",
+    "domain": ".refersion.com",
+    "path": "/",
+    "expires": 1809559843.101375,
+    "httpOnly": false,
+    "secure": true,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "ci_session",
+    "value": "NbjdY5xud0x%2Bd5cHDvp6JkLAkf2VsGjmng4pJH1Kfpo%2FQFJyHE5o3Qg3bd%2BcryaKxMaxw9a6c8TTT2yRK%2F8k7UvkSopttW%2FvT8bhNvb5PlYbLNlfLKdFxNLNZAjjUnjvABsqqyDr2Yv1TvMt%2Beg0efQzvyj67SRTyQ8ZBMzNdx31HgvSV4TEwyvTn9j2PAl428uxWXZeFWr6fArDnb4FdIzUHctnptsCIlajchgFfCCggVV2HS79TgcxksOYnJ6zetiSKT3HBwqgg14Rt7enH7cH21US%2BHwnh%2Bu1Izsj4%2B0HwCaOhCvZuBvQ%2BsO%2BHLMmnSTIZFaRj%2BzCZM4uO%2BeYsrkGM7SnByjda5vRW8wPdViUC%2BmT5fCS5nA1sph5dCi%2FfG0amVgKD2ICxXBFEIAWbidmynsd4EVFhWeT00QTh1yQmhs9WGZf63%2BQyOGSVA3Bao8otFPK8duiP4KUpnwb%2FtRcI1dFHauSMgCgSdvuEhg%3D",
+    "domain": ".refersion.com",
+    "path": "/",
+    "expires": 1778032013.268834,
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "None"
+  },
+  {
+    "name": "refersion_auth",
+    "value": "b7176640d8dd6190847619f935781916",
+    "domain": ".refersion.com",
+    "path": "/",
+    "expires": 1780615842.985213,
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "None"
+  }
+]
