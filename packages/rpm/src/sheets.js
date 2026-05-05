@@ -23,7 +23,9 @@ function nowCentral() {
     hour12: false,
   }).formatToParts(new Date());
   const get = type => parts.find(p => p.type === type).value;
-  return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}:${get('second')}`;
+  // Some Node.js versions return "24" for midnight with hour12:false — clamp to "00"
+  const hour = get('hour') === '24' ? '00' : get('hour');
+  return `${get('year')}-${get('month')}-${get('day')} ${hour}:${get('minute')}:${get('second')}`;
 }
 
 function generateTransactionId(orderDate, commissionCents) {
