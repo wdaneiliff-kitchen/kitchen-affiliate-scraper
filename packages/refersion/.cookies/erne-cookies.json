@@ -1,33 +1,33 @@
 [
   {
-    "name": "refersion_csrf_cookie",
-    "value": "51a54f24711b92d66fd29ca39a3172bc",
-    "domain": ".refersion.com",
-    "path": "/",
-    "expires": 1778032016.578754,
-    "httpOnly": true,
-    "secure": true,
-    "sameSite": "None"
-  },
-  {
     "name": "_mkto_trk",
     "value": "id:489-UGL-390&token:_mch-refersion.com-b8225c5bbae10c980e960b367887af5",
     "domain": ".refersion.com",
     "path": "/",
     "expires": 1809284609.132768,
+    "size": 80,
     "httpOnly": false,
     "secure": false,
-    "sameSite": "Lax"
+    "session": false,
+    "sameSite": "Lax",
+    "priority": "Medium",
+    "sameParty": false,
+    "sourceScheme": "NonSecure"
   },
   {
-    "name": "_gcl_au",
-    "value": "1.1.1705741517.1774724609",
+    "name": "refersion_csrf_cookie",
+    "value": "51a54f24711b92d66fd29ca39a3172bc",
     "domain": ".refersion.com",
     "path": "/",
-    "expires": 1782500608,
-    "httpOnly": false,
-    "secure": false,
-    "sameSite": "Lax"
+    "expires": 1778032260.723196,
+    "size": 53,
+    "httpOnly": true,
+    "secure": true,
+    "session": false,
+    "sameSite": "None",
+    "priority": "Medium",
+    "sameParty": false,
+    "sourceScheme": "Secure"
   },
   {
     "name": "affiliate_language",
@@ -35,19 +35,29 @@
     "domain": ".refersion.com",
     "path": "/",
     "expires": 1809559843.101375,
+    "size": 20,
     "httpOnly": false,
     "secure": true,
-    "sameSite": "Lax"
+    "session": false,
+    "sameSite": "Lax",
+    "priority": "Medium",
+    "sameParty": false,
+    "sourceScheme": "Secure"
   },
   {
-    "name": "ci_session",
-    "value": "NbjdY5xud0x%2Bd5cHDvp6JkLAkf2VsGjmng4pJH1Kfpo%2FQFJyHE5o3Qg3bd%2BcryaKxMaxw9a6c8TTT2yRK%2F8k7UvkSopttW%2FvT8bhNvb5PlYbLNlfLKdFxNLNZAjjUnjvABsqqyDr2Yv1TvMt%2Beg0efQzvyj67SRTyQ8ZBMzNdx31HgvSV4TEwyvTn9j2PAl428uxWXZeFWr6fArDnb4FdIzUHctnptsCIlajchgFfCCggVV2HS79TgcxksOYnJ6zetiSKT3HBwqgg14Rt7enH7cH21US%2BHwnh%2Bu1Izsj4%2B0HwCaOhCvZuBvQ%2BsO%2BHLMmnSTIZFaRj%2BzCZM4uO%2BeYsrkGM7SnByjda5vRW8wPdViUC%2BmT5fCS5nA1sph5dCi%2FfG0amVgKD2ICxXBFEIAWbidmynsd4EVFhWeT00QTh1yQmhs9WGZf63%2BQyOGSVA3Bao8otFPK8duiP4KUpnwb%2FtRcI1dFHauSMgCgSdvuEhg%3D",
+    "name": "_gcl_au",
+    "value": "1.1.1705741517.1774724609",
     "domain": ".refersion.com",
     "path": "/",
-    "expires": 1778032013.268834,
-    "httpOnly": true,
-    "secure": true,
-    "sameSite": "None"
+    "expires": 1782500608,
+    "size": 32,
+    "httpOnly": false,
+    "secure": false,
+    "session": false,
+    "sameSite": "Lax",
+    "priority": "Medium",
+    "sameParty": false,
+    "sourceScheme": "NonSecure"
   },
   {
     "name": "refersion_auth",
@@ -55,8 +65,28 @@
     "domain": ".refersion.com",
     "path": "/",
     "expires": 1780615842.985213,
+    "size": 46,
     "httpOnly": true,
     "secure": true,
-    "sameSite": "None"
+    "session": false,
+    "sameSite": "None",
+    "priority": "Medium",
+    "sameParty": false,
+    "sourceScheme": "Secure"
+  },
+  {
+    "name": "ci_session",
+    "value": "hWaigfx%2BxhfR8dcTXZy3IG2e6NPtnZqY8DR%2BYhY4HnDY0IHg649a88%2B8oxHOStGvZdRlKtHXDQ7PI%2BGSrN4V2UsPIJIa4nIe5COW4Iw02soTb5Ma6HmHnogtZNGbIirZIhO7uBYOx7tYC4L8psShwOpHP%2BQA4JLnhbGbYq%2Bu3rsx7lDuxbjON2OwaQLuE4uD9CSYgweIpHtnkFJks0Ow2yxyJPxP%2F59q3dJI1rYhYW76WJIMUcWtr%2BntXPb7r7qn9u8lrTEzHy3%2FYyiPYZzMXmCUn%2ByG9Zw7cANX6SawJqjemFsUH3h3LEsMaTcOYvGJxZYj5NDdBE%2FBiXSO26FGwN7c2LfiOm2SsOoar4kCL6MtRdfL%2BpI2aGk4rcUe8arJiJsKmXmaMuLJJGYChSS8eTIp3bVoUXiEe4Ch2INNF1rNdf6PtsOk9FMllyLRjTJZazeLm%2BUjd3xSI0jDF8Y%2Bc%2FIqJzxqZ1u45htkZDsC%2BbA%3D",
+    "domain": ".refersion.com",
+    "path": "/",
+    "expires": 1778032100.585528,
+    "size": 536,
+    "httpOnly": true,
+    "secure": true,
+    "session": false,
+    "sameSite": "None",
+    "priority": "Medium",
+    "sameParty": false,
+    "sourceScheme": "Secure"
   }
 ]

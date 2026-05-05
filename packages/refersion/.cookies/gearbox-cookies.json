@@ -1,18 +1,18 @@
 [
   {
-    "name": "_gcl_au",
-    "value": "1.1.1705741517.1774724609",
+    "name": "affiliate_language",
+    "value": "EN",
     "domain": ".refersion.com",
     "path": "/",
-    "expires": 1782500608,
-    "size": 32,
+    "expires": 1809559843.101375,
+    "size": 20,
     "httpOnly": false,
-    "secure": false,
+    "secure": true,
     "session": false,
     "sameSite": "Lax",
     "priority": "Medium",
     "sameParty": false,
-    "sourceScheme": "NonSecure"
+    "sourceScheme": "Secure"
   },
   {
     "name": "_mkto_trk",
@@ -30,12 +30,12 @@
     "sourceScheme": "NonSecure"
   },
   {
-    "name": "ci_session",
-    "value": "Wc7VcWhM%2BRRh%2BI2M9ECyEnQdY7GljnLrN75wBuCiaA3JTo993tUgEgS5tBEgonNQtYg9FyXszHg8BUTX%2F7CMgtViJP6GORnKYH%2Fc96Gw4dODQHAI2fiR5Vy1jN5lToz%2FkpwRXSIrZpACZxofwflYGUurI8UEU6LeTTHUyIpYRa%2FxeQQFYQ404kthlHHyVANOBgOahpyKIFpzmR%2FytN%2FiHSW8U%2F%2FUdtYQj1B6R6WLngXfVGvMYOUkbAm6kluHIKK7Wto%2BTBCbV%2Fo9voC1ePHOfXiZLCyc2i0kg6OcU9DtMcY2GWX%2BEQQ2LPFm4Iw7QmKKmlrbVGuozreQRAB5uZDrMZDcxUDcd3f5VEVB766VNYZ1wbkN%2B52JLcnWaUnodzpXNxktVTIdi4WNHsI1AY7Iy3lgcTzbujXhjP6ndb9uqYiLISHZheJENeLYtBGy22aM5IuDYysyImkcZlZqWmlqh0T0HWb97GsrKm%2FkD60Z6OQ%3D",
+    "name": "refersion_csrf_cookie",
+    "value": "51a54f24711b92d66fd29ca39a3172bc",
     "domain": ".refersion.com",
     "path": "/",
-    "expires": 1778031922.345045,
-    "size": 534,
+    "expires": 1778032412.537272,
+    "size": 53,
     "httpOnly": true,
     "secure": true,
     "session": false,
@@ -45,19 +45,19 @@
     "sourceScheme": "Secure"
   },
   {
-    "name": "refersion_csrf_cookie",
-    "value": "51a54f24711b92d66fd29ca39a3172bc",
+    "name": "_gcl_au",
+    "value": "1.1.1705741517.1774724609",
     "domain": ".refersion.com",
     "path": "/",
-    "expires": 1778031963.248345,
-    "size": 53,
-    "httpOnly": true,
-    "secure": true,
+    "expires": 1782500608,
+    "size": 32,
+    "httpOnly": false,
+    "secure": false,
     "session": false,
-    "sameSite": "None",
+    "sameSite": "Lax",
     "priority": "Medium",
     "sameParty": false,
-    "sourceScheme": "Secure"
+    "sourceScheme": "NonSecure"
   },
   {
     "name": "refersion_auth",
@@ -75,16 +75,16 @@
     "sourceScheme": "Secure"
   },
   {
-    "name": "affiliate_language",
-    "value": "EN",
+    "name": "ci_session",
+    "value": "TGVdueW%2FW%2BNKzY9odTr%2BH4VkkrhG6mDT%2FHF7W14%2F6%2FGfcctKAwylYAx7KsxurlGAY%2B3%2BkVZAL3SWfhArl2%2FCLHUZ7hr0Aq1XjZwibgnnA0iKAhyNcqE5hPWtJszKiKPy%2B5J6gJrPIQaqcwkrHZcB6r1YYFgBYTnXX6xMalhWeL6L4fvCxWIAuEGxgWO%2BOwx53VALxSi%2Fe8Uk73hz3K%2BpDvqIRzrXW1GeT3boHvDy93hJVW3qNKiSkNHuMNftD1YiR2pPU1N05y1zZtD5cApwvislm8w2F5ZXjuP8d3QuFyKWDu%2BF8xTYVev%2Fge0rPJ%2BkZGIxkmz3%2FBzSWfWLokcZhpd5gXjapTsDQu7%2B78OJftxQvnz8ewVTzgBDrCfubLbkc5U9S4FlNiMG%2FeMjh%2B1voGNGYpA%2Bk1S6AFUsGMt9CfyNzDoRBJBAyBztVz9SZfXIYEdv9ZeDXgeJ4N4Ozg69lbirz3xmtqhen%2BCnYL9VOKI%3D",
     "domain": ".refersion.com",
     "path": "/",
-    "expires": 1809559843.101375,
-    "size": 20,
-    "httpOnly": false,
+    "expires": 1778032357.77163,
+    "size": 548,
+    "httpOnly": true,
     "secure": true,
     "session": false,
-    "sameSite": "Lax",
+    "sameSite": "None",
     "priority": "Medium",
     "sameParty": false,
     "sourceScheme": "Secure"
