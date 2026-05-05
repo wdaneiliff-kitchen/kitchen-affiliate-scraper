@@ -176,6 +176,7 @@ export function getAccount(name) {
       baseUrl: resolveBaseUrl('proton'),
       advertiserId: 'proton',
       advertiserName: 'Proton',
+      commissionRate: 0.50,
     },
   };
   return accounts[name];

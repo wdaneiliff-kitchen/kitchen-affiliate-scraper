@@ -181,6 +181,21 @@ async function processAccount(accountName, args) {
     console.log('🔄 Transforming data to target schema...');
     const transformer = createAccountTransformer(account);
     records = transformer.transformRecords(rawCommissions);
+
+    if (account.commissionRate) {
+      let overrideCount = 0;
+      records = records.map(r => {
+        if (r.commission_amount === 0 && r.sale_amount !== 0) {
+          overrideCount++;
+          return { ...r, commission_amount: Math.round(r.sale_amount * account.commissionRate) };
+        }
+        return r;
+      });
+      if (overrideCount > 0) {
+        console.log(`💱 Applied ${(account.commissionRate * 100).toFixed(0)}% commission override to ${overrideCount} records`);
+      }
+    }
+
     console.log(`✅ Transformed records: ${records.length}\n`);
 
     const jsonPath = `uppromote-${accountName}-commissions-${new Date().toISOString().slice(0, 10)}.json`;
