@@ -13,8 +13,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     environment: main
-    env:
-      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 
     steps:
       - name: Checkout
@@ -108,51 +106,4 @@ jobs:
           });
 
           console.log(`✅ Snapshot written: ${centralDate} | sales=${totalSales} | earned=$${totalEarned}`);
-          process.stdout.write(`SNAPSHOT_DATE=${centralDate}\nTOTAL_SALES=${totalSales}\nTOTAL_EARNED=${totalEarned}\n`);
-          EOF
-
-      - name: Notify Slack
-        if: env.SLACK_WEBHOOK_URL != ''
-        env:
-          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
-          GOOGLE_CREDENTIALS_PATH: ${{ github.workspace }}/credentials.json
-        run: |
-          cd packages/shared
-          node --input-type=module <<'EOF'
-          import { google } from 'googleapis';
-          import { readFile } from 'fs/promises';
-          import { createRequire } from 'module';
-          const require = createRequire(import.meta.url);
-          const https = require('https');
-
-          const spreadsheetId = process.env.GOOGLE_SHEET_ID;
-          const credentials = JSON.parse(await readFile(process.env.GOOGLE_CREDENTIALS_PATH, 'utf-8'));
-          const auth = new google.auth.GoogleAuth({ credentials, scopes: ['https://www.googleapis.com/auth/spreadsheets'] });
-          const sheets = google.sheets({ version: 'v4', auth: await auth.getClient() });
-
-          const snap = await sheets.spreadsheets.values.get({ spreadsheetId, range: 'RPM Daily Snapshots!A:D' });
-          const rows = (snap.data.values || []).slice(1);
-          if (rows.length < 1) process.exit(0);
-
-          const today = rows[rows.length - 1];
-          const todayEarned = parseFloat(today[2]);
-          const todaySales = parseInt(today[1]);
-
-          let deltaText = '';
-          if (rows.length >= 2) {
-            const yesterday = rows[rows.length - 2];
-            const yEarned = parseFloat(yesterday[2]);
-            const ySales = parseInt(yesterday[1]);
-            const deltaEarned = (todayEarned - yEarned).toFixed(2);
-            const deltaSales = todaySales - ySales;
-            deltaText = `\n*Today's delta:* ${deltaSales} orders · *+$${deltaEarned}* commission`;
-          }
-
-          const text = `:bar_chart: *RPM Pickleball — End of Day (${today[0]})*\nTotal sales: *${todaySales}* · Total earned: *$${todayEarned.toFixed(2)}*${deltaText}`;
-          const payload = JSON.stringify({ blocks: [{ type: 'section', text: { type: 'mrkdwn', text } }] });
-          const url = new URL(process.env.SLACK_WEBHOOK_URL);
-          const req = https.request({ hostname: url.hostname, path: url.pathname, method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } }, () => {});
-          req.write(payload);
-          req.end();
-          console.log('Slack notified.');
           EOF
