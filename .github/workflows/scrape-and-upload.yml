@@ -164,6 +164,41 @@ jobs:
           req.end();
           "
 
+      - name: Check 2Captcha balance
+        if: env.SLACK_WEBHOOK_URL != ''
+        env:
+          TWOCAPTCHA_API_KEY: ${{ secrets.TWOCAPTCHA_API_KEY }}
+        run: |
+          node -e "
+          const https = require('https');
+          const key = process.env.TWOCAPTCHA_API_KEY;
+          if (!key) process.exit(0);
+
+          https.get('https://2captcha.com/res.php?key=' + key + '&action=getbalance', res => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+              const balance = parseFloat(data.trim());
+              if (isNaN(balance)) { console.log('Could not read 2Captcha balance: ' + data.trim()); process.exit(0); }
+              console.log('2Captcha balance: \$' + balance.toFixed(2));
+
+              const WARN = 5;
+              const CRITICAL = 1;
+              if (balance >= WARN) process.exit(0);
+
+              const emoji = balance < CRITICAL ? ':rotating_light:' : ':warning:';
+              const urgency = balance < CRITICAL ? '*CRITICAL — scrapers will fail immediately*' : 'Low balance — top up soon to avoid failures';
+              const text = emoji + ' *2Captcha balance alert*\nBalance: *\$' + balance.toFixed(2) + '*\n' + urgency + '\n\nTop up at https://2captcha.com';
+              const payload = JSON.stringify({ blocks: [{ type: 'section', text: { type: 'mrkdwn', text } }] });
+
+              const url = new URL(process.env.SLACK_WEBHOOK_URL);
+              const req = https.request({ hostname: url.hostname, path: url.pathname, method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } }, () => {});
+              req.write(payload);
+              req.end();
+            });
+          });
+          "
+
       - name: Scrape and upload
         id: scrape
         env:
