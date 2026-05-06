@@ -1,7 +1,8 @@
 name: RPM end-of-day snapshot
 
 # Fires at 11:59 PM Central — both crons handle DST (CDT=UTC-5, CST=UTC-6).
-# The script deduplicates so only one row is written per calendar date.
+# Calculates the full day's RPM commission, fills any gap not yet written
+# intraday, and writes the day's closing total to RPM Daily Snapshots.
 on:
   schedule:
     - cron: '59 4 * * *'  # 11:59 PM CDT (Apr–Oct)
@@ -35,7 +36,7 @@ jobs:
           GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
         run: node -e "require('fs').writeFileSync('credentials.json', process.env.GOOGLE_CREDENTIALS_JSON || '')"
 
-      - name: Write EOD snapshot
+      - name: Reconcile and snapshot RPM
         env:
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
           GOOGLE_CREDENTIALS_PATH: ${{ github.workspace }}/credentials.json
@@ -44,66 +45,111 @@ jobs:
           node --input-type=module <<'EOF'
           import { google } from 'googleapis';
           import { readFile } from 'fs/promises';
+          import { createHash } from 'crypto';
 
           const spreadsheetId = process.env.GOOGLE_SHEET_ID;
           const credentials = JSON.parse(await readFile(process.env.GOOGLE_CREDENTIALS_PATH, 'utf-8'));
           const auth = new google.auth.GoogleAuth({ credentials, scopes: ['https://www.googleapis.com/auth/spreadsheets'] });
           const sheets = google.sheets({ version: 'v4', auth: await auth.getClient() });
 
-          // Central time date for today
-          const centralDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date());
+          const SNAPSHOT_TAB  = 'RPM Daily Snapshots';
+          const TRACKING_TAB  = 'RPM Commissions';
+          const MAIN_TAB      = 'Comissions';
+          const ADVERTISER_ID = 'rpm-pickleball';
+          const COMMISSION_RATE = 0.40;
 
-          const SNAPSHOT_TAB = 'RPM Daily Snapshots';
-          const TRACKING_TAB = 'RPM Commissions';
-
-          // Ensure snapshot tab exists
-          const meta = await sheets.spreadsheets.get({ spreadsheetId });
-          const exists = meta.data.sheets.some(s => s.properties.title === SNAPSHOT_TAB);
-          if (!exists) {
-            await sheets.spreadsheets.batchUpdate({
-              spreadsheetId,
-              requestBody: { requests: [{ addSheet: { properties: { title: SNAPSHOT_TAB } } }] },
-            });
-            await sheets.spreadsheets.values.update({
-              spreadsheetId,
-              range: `${SNAPSHOT_TAB}!A1`,
-              valueInputOption: 'RAW',
-              requestBody: { values: [['date', 'total_sales', 'total_earned_usd', 'recorded_at']] },
-            });
-            console.log(`Created tab: ${SNAPSHOT_TAB}`);
-          }
-
-          // Deduplicate — skip if today already has a row
-          const existing = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${SNAPSHOT_TAB}!A:A` });
-          const dates = (existing.data.values || []).slice(1).map(r => r[0]);
-          if (dates.includes(centralDate)) {
-            console.log(`Snapshot for ${centralDate} already exists — skipping.`);
-            process.exit(0);
-          }
-
-          // Read latest cumulative from RPM Commissions tab
-          const tracking = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${TRACKING_TAB}!A:E` });
-          const rows = tracking.data.values || [];
-          if (rows.length < 2) { console.error('No RPM data found'); process.exit(1); }
-          const last = rows[rows.length - 1];
-          const totalSales = last[1];
-          const totalEarned = last[2];
-
-          // Central timestamp
-          const recordedAt = new Intl.DateTimeFormat('en-US', {
+          // Current Central date/time
+          const centralParts = new Intl.DateTimeFormat('en-US', {
             timeZone: 'America/Chicago',
             year: 'numeric', month: '2-digit', day: '2-digit',
             hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
           }).formatToParts(new Date()).reduce((acc, p) => ({ ...acc, [p.type]: p.value }), {});
-          const ts = `${recordedAt.year}-${recordedAt.month}-${recordedAt.day} ${recordedAt.hour}:${recordedAt.minute}:${recordedAt.second}`;
+          const centralDate = `${centralParts.year}-${centralParts.month}-${centralParts.day}`;
+          const nowCentral  = `${centralDate} ${centralParts.hour}:${centralParts.minute}:${centralParts.second}`;
 
-          const nextRow = (existing.data.values || []).length + 1;
-          await sheets.spreadsheets.values.update({
-            spreadsheetId,
-            range: `${SNAPSHOT_TAB}!A${nextRow}`,
-            valueInputOption: 'RAW',
-            requestBody: { values: [[centralDate, totalSales, totalEarned, ts]] },
-          });
+          // 1. Get today's cumulative total from RPM Commissions tracking tab
+          const tracking = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${TRACKING_TAB}!A:E` });
+          const trackRows = tracking.data.values || [];
+          if (trackRows.length < 2) { console.error('No RPM tracking data'); process.exit(1); }
+          const lastTrack = trackRows[trackRows.length - 1];
+          const todayCumulative = parseFloat(lastTrack[2]);
+          const todayCumulativeSales = parseInt(lastTrack[1]);
 
-          console.log(`✅ Snapshot written: ${centralDate} | sales=${totalSales} | earned=$${totalEarned}`);
+          // 2. Get yesterday's snapshot to compute today's full day total
+          const snapRes = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${SNAPSHOT_TAB}!A:D` });
+          const snapRows = (snapRes.data.values || []).slice(1);
+          const yesterdayRow = snapRows.filter(r => r[0] < centralDate).slice(-1)[0];
+          const yesterdayCumulative = yesterdayRow ? parseFloat(yesterdayRow[2]) : 0;
+          const yesterdaySales = yesterdayRow ? parseInt(yesterdayRow[1]) : 0;
+
+          const todayTotalEarned = Math.round((todayCumulative - yesterdayCumulative) * 100); // cents
+          const todayTotalSales  = todayCumulativeSales - yesterdaySales;
+          console.log(`Today's full day commission: $${(todayTotalEarned / 100).toFixed(2)} across ${todayTotalSales} sales`);
+
+          // 3. Sum what's already been written to the main sheet for today from RPM
+          const mainRes = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${MAIN_TAB}!A:H` });
+          const mainRows = (mainRes.data.values || []).slice(1);
+          const todayRpmRows = mainRows.filter(r => r[1] === ADVERTISER_ID && (r[3] || '').startsWith(centralDate));
+          const alreadyWrittenCents = todayRpmRows.reduce((sum, r) => sum + parseInt(r[6] || '0', 10), 0);
+          console.log(`Already written today: $${(alreadyWrittenCents / 100).toFixed(2)}`);
+
+          // 4. Write the gap if there's anything missing
+          const gapCents = todayTotalEarned - alreadyWrittenCents;
+          if (gapCents > 0) {
+            const saleCents = Math.round(gapCents / COMMISSION_RATE);
+            const txId = 'gen_' + createHash('sha256')
+              .update(`${ADVERTISER_ID}|${nowCentral}|eod|${gapCents}`)
+              .digest('base64url').slice(0, 16);
+
+            const existingIds = new Set(mainRows.map(r => r[0]));
+            if (!existingIds.has(txId)) {
+              const MAIN_HEADERS = [
+                'transaction_id','advertiser_id','advertiser_name','order_date','currency_id',
+                'sale_amount','commission_amount','status','click_date','validation_date',
+                'modified_date','sub_id_1','sub_id_2','sub_id_3','sub_id_4','sub_id_5',
+                'sub_id_6','decline_reason','paid_to_publisher','clickout_url','product_title','order_ref',
+              ];
+              const record = {
+                transaction_id: txId, advertiser_id: ADVERTISER_ID,
+                advertiser_name: 'RPM Pickleball', order_date: nowCentral,
+                currency_id: 'USD', sale_amount: String(saleCents),
+                commission_amount: String(gapCents), status: 'approved',
+              };
+              const row = MAIN_HEADERS.map(h => String(record[h] ?? ''));
+              await sheets.spreadsheets.values.update({
+                spreadsheetId,
+                range: `${MAIN_TAB}!A${mainRows.length + 2}`,
+                valueInputOption: 'RAW',
+                requestBody: { values: [row] },
+              });
+              console.log(`✅ Wrote EOD gap row: $${(gapCents / 100).toFixed(2)} commission`);
+            }
+          } else {
+            console.log('No gap — intraday rows already account for the full day.');
+          }
+
+          // 5. Write/update today's snapshot (skip if already exists)
+          const alreadySnapped = snapRows.some(r => r[0] === centralDate);
+          if (!alreadySnapped) {
+            const meta = await sheets.spreadsheets.get({ spreadsheetId });
+            const tabExists = meta.data.sheets.some(s => s.properties.title === SNAPSHOT_TAB);
+            if (!tabExists) {
+              await sheets.spreadsheets.batchUpdate({
+                spreadsheetId,
+                requestBody: { requests: [{ addSheet: { properties: { title: SNAPSHOT_TAB } } }] },
+              });
+              await sheets.spreadsheets.values.update({
+                spreadsheetId, range: `${SNAPSHOT_TAB}!A1`, valueInputOption: 'RAW',
+                requestBody: { values: [['date', 'total_sales', 'total_earned_usd', 'recorded_at']] },
+              });
+            }
+            const nextRow = snapRows.length + 2;
+            await sheets.spreadsheets.values.update({
+              spreadsheetId, range: `${SNAPSHOT_TAB}!A${nextRow}`, valueInputOption: 'RAW',
+              requestBody: { values: [[centralDate, String(todayCumulativeSales), todayCumulative.toFixed(2), nowCentral]] },
+            });
+            console.log(`✅ Snapshot written: ${centralDate} | sales=${todayCumulativeSales} | earned=$${todayCumulative.toFixed(2)}`);
+          } else {
+            console.log(`Snapshot for ${centralDate} already recorded.`);
+          }
           EOF
