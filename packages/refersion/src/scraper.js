@@ -1,4 +1,5 @@
 import { launchBrowser, createStealthPage, sleep } from '@kitchen/shared/scraper-base';
+import { formatDateUTC } from '@kitchen/shared/transformer';
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { fileURLToPath } from 'url';
 import { dirname, resolve } from 'path';
@@ -47,8 +48,9 @@ export async function scrapeRefersionCommissions({ account, headless = true }) {
     console.log(`📸 Screenshot saved: ${screenshotPath}`);
 
     const records = await extractConversions(page, account);
-    console.log(`✅ Scraped ${records.length} conversions`);
-    return records;
+    const normalized = records.map(r => ({ ...r, order_date: formatDateUTC(r.order_date) }));
+    console.log(`✅ Scraped ${normalized.length} conversions`);
+    return normalized;
 
   } catch (err) {
     console.error('❌ Scraping failed:', err.message);
