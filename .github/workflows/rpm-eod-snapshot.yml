@@ -67,7 +67,22 @@ jobs:
           const centralDate = `${centralParts.year}-${centralParts.month}-${centralParts.day}`;
           const nowCentral  = `${centralDate} ${centralParts.hour}:${centralParts.minute}:${centralParts.second}`;
 
-          // 1. Get today's cumulative total from RPM Commissions tracking tab
+          // 1. Ensure snapshot tab exists before any reads
+          const meta = await sheets.spreadsheets.get({ spreadsheetId });
+          const tabExists = meta.data.sheets.some(s => s.properties.title === SNAPSHOT_TAB);
+          if (!tabExists) {
+            await sheets.spreadsheets.batchUpdate({
+              spreadsheetId,
+              requestBody: { requests: [{ addSheet: { properties: { title: SNAPSHOT_TAB } } }] },
+            });
+            await sheets.spreadsheets.values.update({
+              spreadsheetId, range: `${SNAPSHOT_TAB}!A1`, valueInputOption: 'RAW',
+              requestBody: { values: [['date', 'total_sales', 'total_earned_usd', 'recorded_at']] },
+            });
+            console.log(`Created tab: ${SNAPSHOT_TAB}`);
+          }
+
+          // 2. Get today's cumulative total from RPM Commissions tracking tab
           const tracking = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${TRACKING_TAB}!A:E` });
           const trackRows = tracking.data.values || [];
           if (trackRows.length < 2) { console.error('No RPM tracking data'); process.exit(1); }
@@ -75,7 +90,7 @@ jobs:
           const todayCumulative = parseFloat(lastTrack[2]);
           const todayCumulativeSales = parseInt(lastTrack[1]);
 
-          // 2. Get yesterday's snapshot to compute today's full day total
+          // 3. Get yesterday's snapshot to compute today's full day total
           const snapRes = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${SNAPSHOT_TAB}!A:D` });
           const snapRows = (snapRes.data.values || []).slice(1);
           const yesterdayRow = snapRows.filter(r => r[0] < centralDate).slice(-1)[0];
@@ -86,14 +101,14 @@ jobs:
           const todayTotalSales  = todayCumulativeSales - yesterdaySales;
           console.log(`Today's full day commission: $${(todayTotalEarned / 100).toFixed(2)} across ${todayTotalSales} sales`);
 
-          // 3. Sum what's already been written to the main sheet for today from RPM
+          // 4. Sum what's already been written to the main sheet for today from RPM
           const mainRes = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${MAIN_TAB}!A:H` });
           const mainRows = (mainRes.data.values || []).slice(1);
           const todayRpmRows = mainRows.filter(r => r[1] === ADVERTISER_ID && (r[3] || '').startsWith(centralDate));
           const alreadyWrittenCents = todayRpmRows.reduce((sum, r) => sum + parseInt(r[6] || '0', 10), 0);
           console.log(`Already written today: $${(alreadyWrittenCents / 100).toFixed(2)}`);
 
-          // 4. Write the gap if there's anything missing
+          // 5. Write the gap if there's anything missing
           const gapCents = todayTotalEarned - alreadyWrittenCents;
           if (gapCents > 0) {
             const saleCents = Math.round(gapCents / COMMISSION_RATE);
@@ -128,21 +143,9 @@ jobs:
             console.log('No gap — intraday rows already account for the full day.');
           }
 
-          // 5. Write/update today's snapshot (skip if already exists)
+          // 6. Write today's snapshot (skip if already exists)
           const alreadySnapped = snapRows.some(r => r[0] === centralDate);
           if (!alreadySnapped) {
-            const meta = await sheets.spreadsheets.get({ spreadsheetId });
-            const tabExists = meta.data.sheets.some(s => s.properties.title === SNAPSHOT_TAB);
-            if (!tabExists) {
-              await sheets.spreadsheets.batchUpdate({
-                spreadsheetId,
-                requestBody: { requests: [{ addSheet: { properties: { title: SNAPSHOT_TAB } } }] },
-              });
-              await sheets.spreadsheets.values.update({
-                spreadsheetId, range: `${SNAPSHOT_TAB}!A1`, valueInputOption: 'RAW',
-                requestBody: { values: [['date', 'total_sales', 'total_earned_usd', 'recorded_at']] },
-              });
-            }
             const nextRow = snapRows.length + 2;
             await sheets.spreadsheets.values.update({
               spreadsheetId, range: `${SNAPSHOT_TAB}!A${nextRow}`, valueInputOption: 'RAW',
