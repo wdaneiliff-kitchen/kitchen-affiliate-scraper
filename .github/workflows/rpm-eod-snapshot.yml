@@ -94,8 +94,13 @@ jobs:
           const snapRes = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${SNAPSHOT_TAB}!A:D` });
           const snapRows = (snapRes.data.values || []).slice(1);
           const yesterdayRow = snapRows.filter(r => r[0] < centralDate).slice(-1)[0];
-          const yesterdayCumulative = yesterdayRow ? parseFloat(yesterdayRow[2]) : 0;
-          const yesterdaySales = yesterdayRow ? parseInt(yesterdayRow[1]) : 0;
+          if (!yesterdayRow) {
+            console.log('No prior snapshot found — skipping gap calculation to avoid writing bad data.');
+            console.log('Write a baseline snapshot manually, then this job will work correctly going forward.');
+            process.exit(0);
+          }
+          const yesterdayCumulative = parseFloat(yesterdayRow[2]);
+          const yesterdaySales = parseInt(yesterdayRow[1]);
 
           const todayTotalEarned = Math.round((todayCumulative - yesterdayCumulative) * 100); // cents
           const todayTotalSales  = todayCumulativeSales - yesterdaySales;
