@@ -17,6 +17,8 @@
  * - Thrive
  * - Mark
  * - Gherkin
+ * - Proton
+ * - Aireo
  *
  * Each brand has its own UpPromote shop URL and credentials.
  */
@@ -56,6 +58,7 @@ const ACCOUNT_BASE_URLS = {
   mark: 'https://af.uppromote.com/495311-2',
   gherkin: 'https://af.uppromote.com/GherkinUSA',
   proton: 'https://af.uppromote.com/proton-sports-inc',
+  aireo: 'https://af.uppromote.com/qm0wg4-ay',
 };
 
 function resolveBaseUrl(accountName) {
@@ -178,11 +181,19 @@ export function getAccount(name) {
       advertiserName: 'Proton',
       commissionRate: 0.50,
     },
+    aireo: {
+      email: resolveCredential('aireo', 'EMAIL'),
+      password: resolveCredential('aireo', 'PASSWORD'),
+      baseUrl: resolveBaseUrl('aireo'),
+      advertiserId: 'aireo',
+      advertiserName: 'Aireo',
+      commissionRate: 0.25,
+    },
   };
   return accounts[name];
 }
 
-export const ACCOUNT_NAMES = ['luzz', 'honolulu', 'holbrook', 'diadem', 'pickleballapes', 'udrippin', '11six24', 'vatic', 'gruvn', 'sixzero', 'neonic', 'chorus', 'thrive', 'mark', 'gherkin', 'proton'];
+export const ACCOUNT_NAMES = ['luzz', 'honolulu', 'holbrook', 'diadem', 'pickleballapes', 'udrippin', '11six24', 'vatic', 'gruvn', 'sixzero', 'neonic', 'chorus', 'thrive', 'mark', 'gherkin', 'proton', 'aireo'];
 
 // Default account
 export const DEFAULT_ACCOUNT = 'luzz';

@@ -19,6 +19,7 @@ Scrapes commission/transaction data from UpPromote affiliate dashboard and uploa
 - **Thrive**
 - **Mark**
 - **Gherkin**
+- **Aireo**
 
 ### Quick start: LUZZ
 

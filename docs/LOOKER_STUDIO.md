@@ -59,6 +59,7 @@ These 22 columns are written by the shared transformer (`packages/shared/src/tra
 | `thrive` | Thrive | UpPromote | `uppromote` |
 | `mark` | Mark | UpPromote | `uppromote` |
 | `gherkin` | Gherkin | UpPromote | `uppromote` |
+| `aireo` | Aireo | UpPromote | `uppromote` |
 | `paddletek` | Paddletek Pickleball | Shortly | `shortly` |
 | `goaffpro-forwrd` | GoAffPro (Forwrd) | GoAffPro | `goaffpro` |
 | `franklin` | Franklin | Impact | `impact` |

@@ -15,6 +15,7 @@
 #   UPPROMOTE_THRIVE_EMAIL, UPPROMOTE_MARK_EMAIL           (per-account email overrides)
 #   UPPROMOTE_GHERKIN_EMAIL                                (per-account email override)
 #   UPPROMOTE_PROTON_EMAIL                                 (per-account email override)
+#   UPPROMOTE_AIREO_EMAIL                                  (per-account email override)
 #   UPPROMOTE_LUZZ_BASE_URL, UPPROMOTE_HONOLULU_BASE_URL, UPPROMOTE_DIADEM_BASE_URL  (optional, have hardcoded defaults)
 #   UPPROMOTE_HOLBROOK_BASE_URL, UPPROMOTE_PICKLEBALLAPES_BASE_URL                 (optional, have hardcoded defaults)
 #   AFFILIATLY_EMAIL, AFFILIATLY_PASSWORD
@@ -92,6 +93,7 @@ jobs:
             packages/uppromote/.cookies/mark-cookies.json
             packages/uppromote/.cookies/gherkin-cookies.json
             packages/uppromote/.cookies/proton-cookies.json
+            packages/uppromote/.cookies/aireo-cookies.json
             packages/rpm/.cookies/rpm-cookies.json
             packages/refersion/.cookies/gearbox-cookies.json
             packages/refersion/.cookies/erne-cookies.json
@@ -230,6 +232,7 @@ jobs:
           UPPROMOTE_MARK_EMAIL: ${{ secrets.UPPROMOTE_MARK_EMAIL }}
           UPPROMOTE_GHERKIN_EMAIL: ${{ secrets.UPPROMOTE_GHERKIN_EMAIL }}
           UPPROMOTE_PROTON_EMAIL: ${{ secrets.UPPROMOTE_PROTON_EMAIL }}
+          UPPROMOTE_AIREO_EMAIL: ${{ secrets.UPPROMOTE_AIREO_EMAIL }}
           AFFILIATLY_EMAIL: ${{ secrets.AFFILIATLY_EMAIL }}
           AFFILIATLY_PASSWORD: ${{ secrets.AFFILIATLY_PASSWORD }}
           GOAFFPRO_EMAIL: ${{ secrets.GOAFFPRO_EMAIL }}
@@ -325,6 +328,7 @@ jobs:
             packages/uppromote/.cookies/mark-cookies.json
             packages/uppromote/.cookies/gherkin-cookies.json
             packages/uppromote/.cookies/proton-cookies.json
+            packages/uppromote/.cookies/aireo-cookies.json
             packages/rpm/.cookies/rpm-cookies.json
             packages/refersion/.cookies/gearbox-cookies.json
             packages/refersion/.cookies/erne-cookies.json

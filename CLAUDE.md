@@ -1,0 +1,206 @@
+# CLAUDE.md
+
+This file is the **single source of truth** for working on this repo with Claude Code. Read it first at the start of every session and treat it as authoritative context. Update it whenever something meaningful changes (see "Session workflow" at the bottom).
+
+---
+
+## 1. Who is this for
+
+**Dane** maintains this repo at The Kitchen Pickleball. He is **not a developer** — his job is to keep the scrapers running, debug failures, and ship small fixes. He uses Claude Code as his debugging partner and prefers **plain-English explanations without jargon**. When proposing changes, walk through what will happen and why; don't assume he'll read the diff to figure it out.
+
+---
+
+## 2. What this project does
+
+A **pnpm monorepo** of automated scrapers that collect affiliate commission data from many partner platforms and push it to **one shared Google Sheet**. That sheet feeds a **Looker Studio** dashboard so finance/ops can see sales and commissions across all brands in one place — instead of logging into a dozen different affiliate tools by hand.
+
+- Live sheet: https://docs.google.com/spreadsheets/d/1DWtmjS3575qsrOhEkv7IpjNp9YDtKEcleFpofKy9N4E/edit
+- Repo on GitHub: https://github.com/wdaneiliff-kitchen/kitchen-affiliate-scraper
+- Scheduled runs: every 1.5 hours, 7am–11:30pm Central (12 runs/day) via GitHub Actions
+- Manual trigger: `pnpm scraper` (kicks off the GH Actions workflow) or the **Actions** tab on GitHub
+
+---
+
+## 3. Repo layout
+
+```
+kitchen-affiliate-scraper-main/
+├── .github/
+│   ├── README.md                 # GH Actions secrets reference
+│   └── workflows/
+│       ├── scrape-and-upload.yml # Main scheduled scraper run (every 1.5h)
+│       ├── rpm-eod-snapshot.yml  # Nightly 11:59pm Central RPM reconciliation
+│       └── migrate-dates.yml     # One-time UTC→Central migration (manual only)
+├── docs/
+│   ├── LOOKER_STUDIO.md          # Dashboard schema, calculated fields, gotchas
+│   └── MANUAL_NETWORKS.md        # Networks that can't be scraped (Refersion notes)
+├── packages/
+│   ├── shared/                   # Common helpers (transformer, sheets, base scraper)
+│   ├── bixgrow/                  # Joola
+│   ├── socialsnowball/           # Enhance, CRBN, Friday
+│   ├── shortly/                  # Paddletek
+│   ├── uppromote/                # 15+ pickleball brands (see below)
+│   ├── affiliatly/               # Engage
+│   ├── goaffpro/                 # Forwrd
+│   ├── rpm/                      # RPM Pickleball (Shopify Collabs)
+│   └── refersion/                # Gearbox, ERNE, Volair
+├── package.json                  # Root pnpm scripts (pnpm bixgrow, pnpm uppromote:all, etc.)
+├── credentials.json              # Google service account (gitignored, local only)
+└── .env                          # All credentials (gitignored, local only)
+```
+
+---
+
+## 4. Scrapers — quick reference
+
+Each package follows the same pattern: **scrape → transform → upload to Google Sheet**. Run any of them from the repo root:
+
+| Command | Platform | Brands |
+|---|---|---|
+| `pnpm bixgrow` | BixGrow | Joola |
+| `pnpm socialsnowball:all` | SocialSnowball | Enhance, CRBN, Friday |
+| `pnpm shortly` | Shortly | Paddletek |
+| `pnpm uppromote:all` | UpPromote | Luzz, Honolulu, Holbrook, Diadem, Pickleball Apes, UDrippin, 11six24, Vatic, Gruvn, Six Zero, Neonic, Chorus, Thrive, Mark, Gherkin, Proton, Aireo |
+| `pnpm affiliatly` | Affiliatly | Engage |
+| `pnpm goaffpro` | GoAffPro | Forwrd |
+| `pnpm rpm` | Shopify Collabs | RPM Pickleball |
+| `pnpm refersion` | Refersion | Gearbox, ERNE, Volair |
+
+Add `:scrape` (e.g. `pnpm bixgrow:scrape`) to skip the upload step and just dump JSON locally — useful for debugging.
+
+Add `--account=<name>` for multi-account scrapers, or `--account=all`. Add `--visible` to see the browser, `--debug` to keep it open, `--scrape-only` to skip the upload.
+
+---
+
+## 5. Architecture & data flow
+
+```
+[Affiliate platform UI/API]
+        ↓ (Puppeteer login + scrape, or direct API after token capture)
+[Per-package scraper writes raw JSON]
+        ↓ (shared transformer maps fields → standard schema)
+[Standardized rows in cents, dates as 'YYYY-MM-DD HH:MM:SS' Central]
+        ↓ (shared sheets.js uploads with dedupe by transaction_id)
+[Google Sheet "Comissions" tab — note the typo, that's the real tab name]
+        ↓ (Looker Studio reads via Sheets connector)
+[Dashboard]
+```
+
+### Standardized schema (columns A–V on the sheet)
+
+22 columns written by `packages/shared/src/transformer.js`. Key fields:
+
+- `transaction_id` — natural ID from platform, or `gen_<hash>` if generated
+- `advertiser_id` / `advertiser_name` — brand slug + display name
+- `order_date` — `YYYY-MM-DD HH:MM:SS` in **Central time** (America/Chicago)
+- `sale_amount` / `commission_amount` — **integer cents** (not dollars)
+- `status` — normalized to `pending`, `approved`, or `declined`
+
+Full column reference: see `docs/LOOKER_STUDIO.md`.
+
+### Special tabs in the sheet
+
+- `Comissions` (sic) — main append-only commission rows from all scrapers
+- `RPM Commissions` — RPM cumulative tracking (Sales + Earned columns from Shopify Collabs analytics page)
+- `RPM Daily Snapshots` — end-of-day closing totals; written nightly at 11:59pm Central by `rpm-eod-snapshot.yml`
+
+### How RPM is different
+
+RPM (Shopify Collabs) doesn't expose individual transactions. Instead the scraper:
+1. Reads cumulative `Sales` and `Earned` from the analytics page
+2. Compares to the previous run's value (stored in `RPM Commissions`)
+3. Writes the **delta** as a new row in the main `Comissions` tab
+4. Each night the EOD job reconciles: it reads the day's full delta, sums what was already written intraday, and writes a single "gap" row if any commission is unaccounted for
+
+Commission rate for RPM is hardcoded at **40%** (`COMMISSION_RATE = 0.40` in `rpm-eod-snapshot.yml`).
+
+### Authentication strategies
+
+Different platforms use different login mechanisms — the scrapers handle them differently:
+
+| Platform | Auth method |
+|---|---|
+| BixGrow | Email/password → captures JWT, then direct API calls |
+| SocialSnowball, Shortly | Standard email/password login via Puppeteer |
+| UpPromote, Affiliatly | Login has reCAPTCHA. Cookie persistence first; 2Captcha fallback for unattended runs |
+| GoAffPro | Standard login, but isolated Puppeteer instance to avoid frame-detach errors |
+| RPM (Shopify Collabs) | **Cookies only** — hCaptcha on login is unsolvable. Refresh from Chrome via Cookie-Editor extension |
+| Refersion (Gearbox/ERNE/Volair) | reCAPTCHA + email magic link → **manual only** (see `docs/MANUAL_NETWORKS.md`). The scraper uses pre-saved cookies. |
+
+Cookies live in each package's `.cookies/` folder, are cached across GH Actions runs, and old caches are auto-deleted after 7 days.
+
+---
+
+## 6. Scheduling
+
+- **Main scrape:** `.github/workflows/scrape-and-upload.yml` runs on cron every 1.5 hours from 7am–11:30pm Central (12 runs/day). Both DST and standard-time-aware crons are listed.
+- **RPM EOD snapshot:** `.github/workflows/rpm-eod-snapshot.yml` fires at 11:59pm Central every day. Two crons handle CDT (`59 4 * * *`) and CST (`59 5 * * *`). It reconciles the day's RPM commission and writes the closing snapshot.
+- **Migration:** `.github/workflows/migrate-dates.yml` is `workflow_dispatch` only — a one-time tool, do not schedule.
+
+Each scraper runs in its own subshell so one failure doesn't block the rest. Failures notify Slack `#tech` via `SLACK_WEBHOOK_URL`. The job also pre-checks **cookie expiry** (warns if any cookie expires within 7 days) and **2Captcha balance** (warns at $5, critical at $1).
+
+---
+
+## 7. Conventions & rules
+
+These reflect how the codebase is built and how Dane wants to keep it. Follow them by default; ask before deviating.
+
+- **Money in cents.** Amounts are always integers. Looker has calculated fields `sale_dollars` / `commission_dollars` for display.
+- **Dates in Central time, formatted `YYYY-MM-DD HH:MM:SS`.** Use the shared `formatDateUTC` helper despite the name — it now produces Central time. Looker uses `order_date_local` calculated field for display (see `docs/LOOKER_STUDIO.md`).
+- **Status normalized to 3 values:** `pending`, `approved`, `declined`. The shared transformer maps platform-specific labels.
+- **Dedupe on `transaction_id`.** Never write a row whose ID already exists. For platforms without a stable ID, generate `gen_<sha256-prefix>` from a deterministic input.
+- **One scraper per package, one entry point.** `src/index.js` is the runner; `src/scraper.js` does the platform-specific work; `src/config.js` holds field mappings and account configs.
+- **Use the shared package** (`@kitchen/shared`) for transformer, sheets upload, and base scraper logic. Don't duplicate.
+- **Library preferences:**
+  - Puppeteer for browser automation (already installed; don't add Playwright)
+  - `googleapis` for Sheets (already used by shared)
+  - `2captcha-ts` style flow for reCAPTCHA where supported
+  - Avoid adding new heavy deps without a reason
+- **Error handling style:** scrapers log loudly, save an error screenshot (`error-screenshot-*.png`) and a diagnostic JSON, and exit non-zero so the runner script can mark them failed. Don't swallow errors.
+- **Naming:** brand slugs are lowercase ASCII (`luzz`, `pickleballapes`, `11six24`). Cookie files: `<slug>-cookies.json`. JSON dumps: `<platform>-<slug>-commissions-YYYY-MM-DD.json` (already gitignored).
+- **No new docs files unless asked.** Keep info in this CLAUDE.md or in package READMEs. The root `README.md` was deleted intentionally — `.github/README.md` is the canonical one.
+
+---
+
+## 8. Known gotchas
+
+Things that have bitten us before. Check here before debugging from scratch.
+
+- **Sheet tab is named `Comissions` (one M).** Don't "fix" the typo — it'll break every scraper.
+- **Looker `order_date` must be set to Text type** in the Sheets data source. If it's set to "Date & Time", Looker auto-mangles the value before `PARSE_DATETIME` sees it and charts go blank. See `docs/LOOKER_STUDIO.md`.
+- **RPM cookies expire and there's no auto-refresh.** When the workflow Slack-warns about expiring RPM cookies: log into collabs.shopify.com in Chrome → Cookie-Editor extension → "Export → JSON" → paste into Claude Code → `! pbpaste > packages/rpm/.cookies/rpm-cookies.json` → commit and push.
+- **Refersion can't be scraped headlessly.** reCAPTCHA + email magic link. The scraper relies on pre-saved cookies; when those expire someone has to log in manually (see `docs/MANUAL_NETWORKS.md`) and refresh cookies.
+- **`nowCentral()` returned hour=24 at midnight on some Node versions.** Fixed in commit `9d10008`. If you see a date like `2026-05-08 24:00:00`, that bug is back.
+- **Proton commission is 50% of sale amount** (UpPromote doesn't expose it directly). Hardcoded — see commit `fdd8224`.
+- **Aireo commission is 25%.** Set as `commissionRate: 0.25` in `packages/uppromote/src/config.js`. The override only applies when UpPromote reports $0 commission, so it's a safety net rather than a forced override.
+- **GoAffPro used to fail with "navigating frame was detached".** Fixed by using an isolated Puppeteer instance (commit `fcb2d54`). Don't merge it back into the shared browser.
+- **EOD snapshot job needs a baseline.** If `RPM Daily Snapshots` is empty, the gap calculation is skipped (commit `2ebc7f3`) — write a baseline row manually before relying on it.
+- **Migration script must run inside the `shared` package** (where `googleapis` lives) — see commit `1060976`.
+- **Node 24 opt-in:** workflows set `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true` to silence GH's Node 16 deprecation warning. Don't remove unless you know what you're replacing it with.
+
+---
+
+## 9. Current state & WIP
+
+As of 2026-05-08:
+
+- All scrapers are operational. Local env complete (`.env`, `credentials.json`, `gh` CLI auth'd as `wdaneiliff-kitchen`, `pnpm` global).
+- Most recent work has been on RPM Pickleball: the EOD reconciliation workflow was added, then patched twice (tab-creation order, then baseline guard). See commits `4b8d5dc` → `2ebc7f3`.
+- Slack alerts now cover failures, cancellations, low 2Captcha balance, and expiring cookies — all routed to `#tech`.
+- The root `README.md` was deleted (`.github/README.md` replaces it). A `pnpm scraper` shortcut was added to trigger a manual GH Actions run.
+- Pending uncommitted state on `main` (per `git status`): cookie file refreshes for several UpPromote brands, RPM dashboard screenshot, Refersion error screenshots, and a `packages/shared/src/fix-proton-dates.js` one-off helper. Ask Dane before committing — some of these may be local-only.
+- No active bugs known. Next likely work: whatever cookie/balance Slack alert fires next, or onboarding a new brand.
+
+---
+
+## 10. Session workflow
+
+**At the start of every session:** read this file first.
+
+**At the end of every session, before signing off:** remind Dane to ask for a CLAUDE.md update if anything new was figured out, decided, or built. Quick prompt template:
+
+> "Anything from today worth saving to CLAUDE.md? (new gotcha, new convention, new scraper or workflow, change to how we do things)"
+
+When updating CLAUDE.md, **edit the relevant section in place** rather than appending a changelog. Keep it tight — old, irrelevant notes should be removed, not buried. The point is that this file stays useful; a stale CLAUDE.md is worse than none.
+
+If a memory in `~/.claude/projects/.../memory/` contradicts this file, **trust this file** and update the memory. CLAUDE.md is the authoritative project record; auto-memory is for cross-session user/feedback context.
