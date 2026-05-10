@@ -39,7 +39,9 @@ import { createHash } from 'node:crypto';
  * - order_ref (optional): Order reference
  */
 
-const CANONICAL_DATE_RE = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
+// Validates date AND time ranges, not just digit count. Rejects e.g. "24:00:00",
+// "13:99:00" — the kind of malformed string Looker can't parse.
+const CANONICAL_DATE_RE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01]) (?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d$/;
 
 // Status value mappings to normalize different representations
 const STATUS_MAPPINGS = {
@@ -330,7 +332,14 @@ function hasTimezoneInfo(str) {
 }
 
 /**
- * Formats a Date object to Y-m-d H:i:s in Central time (America/Chicago, handles CST/CDT automatically)
+ * Formats a Date object to Y-m-d H:i:s in Central time (America/Chicago, handles CST/CDT automatically).
+ *
+ * Some Node.js versions (and some platforms) return hour="24" instead of "00"
+ * for midnight when `hour12: false` is used with the en-US locale — an Intl
+ * quirk. We clamp it so the output is always a valid `HH:MM:SS` string. This
+ * was the source of the May 2026 incident where 64 sheet rows ended up with
+ * `YYYY-MM-DD 24:MM:SS` order_dates that Looker couldn't parse, silently
+ * dropping ~1 sale per midnight from dashboard totals.
  */
 function formatDateComponents(date) {
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -345,7 +354,8 @@ function formatDateComponents(date) {
   }).formatToParts(date);
 
   const get = type => parts.find(p => p.type === type).value;
-  return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}:${get('second')}`;
+  const hour = get('hour') === '24' ? '00' : get('hour');
+  return `${get('year')}-${get('month')}-${get('day')} ${hour}:${get('minute')}:${get('second')}`;
 }
 
 /**

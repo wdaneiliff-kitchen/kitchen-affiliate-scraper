@@ -23,7 +23,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const SHEET_NAME = 'Comissions';
 const DATE_COLS = [3, 8, 9, 10]; // order_date, click_date, validation_date, modified_date
-const CANONICAL_RE = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
+// Same strict validation as transformer.js — rejects "24:MM:SS" and other malformed times.
+const CANONICAL_RE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01]) (?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d$/;
+// Specific repair for the May 2026 hour=24 bug: rewrite "YYYY-MM-DD 24:MM:SS" → "YYYY-MM-DD 00:MM:SS"
+const HOUR_24_RE = /^(\d{4}-\d{2}-\d{2}) 24:(\d{2}:\d{2})$/;
 
 async function main() {
   const credentialsPath = process.env.GOOGLE_CREDENTIALS_PATH || resolve(__dirname, '../../../credentials.json');
@@ -49,7 +52,9 @@ async function main() {
     for (const col of DATE_COLS) {
       const value = row[col];
       if (!value || CANONICAL_RE.test(value)) continue;
-      const fixed = formatDateCentral(value);
+      // Quick repair for the hour=24 midnight bug — preserve the existing day.
+      const hour24 = value.match(HOUR_24_RE);
+      const fixed = hour24 ? `${hour24[1]} 00:${hour24[2]}` : formatDateCentral(value);
       if (!fixed) {
         console.warn(`  ⚠️  Row ${i + 1} col ${String.fromCharCode(65 + col)}: could not parse "${value}" — skipped`);
         unparseable++;
