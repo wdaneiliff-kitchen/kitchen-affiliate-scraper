@@ -92,13 +92,31 @@ Likely a renamed reference to `sub_id_2` (which typically contains the landing p
 
 ### `order_date_local`
 
-Adjusts `order_date` (UTC) by a timezone offset to show local time.
+Parses `order_date` (already in Central time) into a DATETIME for charting.
 
-**Formula:**
+**Current formula (correct as of 2026-05-10):**
 
 ```
-DATETIME_ADD(PARSE_DATETIME("%Y-%m-%d %H:%M:%S", order_date), INTERVAL timezone_offset HOUR)
+PARSE_DATETIME("%Y-%m-%d %H:%M:%S", order_date)
 ```
+
+**Important — historical context:** The scrapers used to write dates in UTC, and
+this field used to apply `DATETIME_ADD(... INTERVAL timezone_offset HOUR)` to shift
+UTC into local time. That stopped being correct in late April 2026 when:
+
+1. The scrapers were changed to write dates directly in Central time (`America/Chicago`),
+   commit `db98525`
+2. All historical rows were migrated from UTC → Central via `migrate-dates.yml`,
+   2026-05-02
+
+After those changes, the data in the sheet is **already in Central time**, so any
+non-zero shift in `order_date_local` (via a `timezone_offset` parameter or a hard-coded
+`INTERVAL`) over-shifts dates and causes late-night/early-morning sales to bucket
+into the wrong day. Symptom: daily totals in the dashboard run $300–$2000 higher than
+reality, with the discrepancy biggest near day boundaries. (Diagnosed 2026-05-10
+after Jared flagged inflated daily numbers.)
+
+If the dashboard ever exposes a `timezone_offset` parameter again, it must be **0**.
 
 **Prerequisite:** The `order_date` field must be set to **Text** type in the data
 source configuration. The scrapers output dates as `YYYY-MM-DD HH:MM:SS` strings
@@ -107,11 +125,6 @@ source configuration. The scrapers output dates as `YYYY-MM-DD HH:MM:SS` strings
 If `order_date` is set to "Date & Time (YYYYMMDDhhmmss)" instead, Looker tries to
 auto-convert the value using the wrong format, which corrupts the data before
 `PARSE_DATETIME` sees it — resulting in NULLs and "No data" in charts.
-
-Similarly, `DATETIME_ADD` requires a DATETIME first argument, not TEXT — so
-`PARSE_DATETIME` cannot be removed. Both pieces are needed:
-1. `order_date` type = Text (so the raw string is preserved)
-2. `PARSE_DATETIME` (converts the text to DATETIME for `DATETIME_ADD`)
 
 Use `order_date_local` as the report's date range dimension for charts and controls.
 Using raw `order_date` caused tables and dropdown controls to appear blank even though

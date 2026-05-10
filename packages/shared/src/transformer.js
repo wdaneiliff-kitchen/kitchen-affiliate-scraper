@@ -4,18 +4,33 @@ import { createHash } from 'node:crypto';
  * Generic transformer for affiliate commission data.
  * Each scraper provides its own field mappings via config.
  *
+ * ============================================================================
+ *  DATE / TIMEZONE CONVENTION — read before touching anything date-related
+ * ============================================================================
+ * All date columns in the Google Sheet are stored as `YYYY-MM-DD HH:MM:SS`
+ * strings in **Central time** (America/Chicago, automatically DST-aware).
+ *
+ * Use `formatDateCentral()` to produce strings in this format. Treat the older
+ * name `formatDateUTC` as a deprecated alias — it ALWAYS wrote Central time
+ * despite the name, and the name caused the May 2026 Looker incident where
+ * the dashboard double-shifted dates because nobody realized the underlying
+ * data had switched from UTC to Central.
+ *
+ * Looker Studio's `order_date_local` calculated field MUST NOT apply any
+ * `timezone_offset` shift — the data is already local. See docs/LOOKER_STUDIO.md.
+ *
  * Target Schema:
  * - transaction_id (required): Unique identifier for the transaction
  * - advertiser_id (required): Unique identifier for the advertiser
  * - advertiser_name (required): Advertiser name
- * - order_date (required): Y-m-d H:i:s format in UTC
+ * - order_date (required): Y-m-d H:i:s in Central time
  * - currency_id (required): 3-letter ISO 4217 code
  * - sale_amount (required): Amount in cents
  * - commission_amount (required): Amount in cents
  * - status (required): 'pending' | 'approved' | 'declined'
- * - click_date (optional): Y-m-d H:i:s format in UTC
- * - validation_date (optional): Y-m-d H:i:s format in UTC
- * - modified_date (optional): Y-m-d H:i:s format in UTC
+ * - click_date (optional): Y-m-d H:i:s in Central time
+ * - validation_date (optional): Y-m-d H:i:s in Central time
+ * - modified_date (optional): Y-m-d H:i:s in Central time
  * - sub_id_1..6 (optional): Sub tracking IDs
  * - decline_reason (optional): Why sale got declined
  * - paid_to_publisher (optional): '1' or '0'
@@ -23,6 +38,8 @@ import { createHash } from 'node:crypto';
  * - product_title (optional): Product title
  * - order_ref (optional): Order reference
  */
+
+const CANONICAL_DATE_RE = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
 
 // Status value mappings to normalize different representations
 const STATUS_MAPPINGS = {
@@ -95,7 +112,7 @@ export function createTransformer(config) {
    */
   function transformRecord(raw) {
     // Resolve fields needed for both output and deterministic ID generation
-    const orderDate = formatDateUTC(findField(raw, fieldMappings.order_date));
+    const orderDate = formatDateCentral(findField(raw, fieldMappings.order_date));
     const saleAmount = toCents(findField(raw, fieldMappings.sale_amount));
     const commissionAmount = toCents(findField(raw, fieldMappings.commission_amount));
     const subId2 = String(findField(raw, fieldMappings.sub_id_2) || '');
@@ -121,9 +138,9 @@ export function createTransformer(config) {
       status: normalizeStatus(findField(raw, fieldMappings.status)),
 
       // Optional fields
-      click_date: formatDateUTC(findField(raw, fieldMappings.click_date)) || '',
-      validation_date: formatDateUTC(findField(raw, fieldMappings.validation_date)) || '',
-      modified_date: formatDateUTC(findField(raw, fieldMappings.modified_date)) || '',
+      click_date: formatDateCentral(findField(raw, fieldMappings.click_date)) || '',
+      validation_date: formatDateCentral(findField(raw, fieldMappings.validation_date)) || '',
+      modified_date: formatDateCentral(findField(raw, fieldMappings.modified_date)) || '',
       sub_id_1: String(findField(raw, fieldMappings.sub_id_1) || ''),
       sub_id_2: subId2,
       sub_id_3: String(findField(raw, fieldMappings.sub_id_3) || ''),
@@ -199,50 +216,65 @@ function generateTransactionId(fields) {
 }
 
 /**
- * Formats a date to Y-m-d H:i:s UTC format.
- * Handles relative time prefixes from scraped pages (e.g., "14 hours agoFeb 7, 2026 8:20 PM").
+ * Parses any reasonable date input and returns it as `YYYY-MM-DD HH:MM:SS`
+ * in Central time (America/Chicago).
  *
- * All ambiguous date strings (without explicit timezone info) are treated as
- * UTC to ensure consistent output regardless of where the code runs (e.g.,
- * local machine in PST vs GitHub Actions in UTC).
+ * Strings without explicit timezone info are treated as UTC, then converted to
+ * Central. This keeps output deterministic regardless of where the code runs
+ * (laptop in PST vs. GitHub Actions in UTC).
+ *
+ * Handles common scraper quirks:
+ *   - Relative-time prefixes ("14 hours agoFeb 7, 2026 8:20 PM")
+ *   - Human-readable month strings ("Feb 7, 2026 8:20 PM")
+ *
+ * Returns '' if the input cannot be parsed. Warns to the console if the
+ * output ever fails the canonical-format check (would have caught the
+ * 'Joola' corruption that ended up in the sheet).
  */
-export function formatDateUTC(dateValue) {
+export function formatDateCentral(dateValue) {
   if (!dateValue) return '';
 
   try {
     const str = String(dateValue).trim();
-
-    // Try direct parse (forced to UTC for ambiguous strings)
-    let date = parseAsUTC(str);
-    if (date) {
-      return formatDateComponents(date);
+    const result = parseToCentralString(str);
+    if (result && !CANONICAL_DATE_RE.test(result)) {
+      console.warn(`formatDateCentral produced non-canonical output for input "${dateValue}": "${result}"`);
+      return '';
     }
-
-    // Handle relative time prefix (e.g., "14 hours agoFeb 7, 2026 8:20 PM")
-    const agoIndex = str.lastIndexOf('ago');
-    if (agoIndex !== -1) {
-      const afterAgo = str.slice(agoIndex + 3).trim();
-      date = parseAsUTC(afterAgo);
-      if (date) {
-        return formatDateComponents(date);
-      }
-    }
-
-    // Try extracting a month-based date pattern (e.g., "Feb 7, 2026 8:20 PM")
-    const monthPattern = /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},?\s+\d{4}[\s\d:APMapm]*/i;
-    const monthMatch = str.match(monthPattern);
-    if (monthMatch) {
-      date = parseAsUTC(monthMatch[0].trim());
-      if (date) {
-        return formatDateComponents(date);
-      }
-    }
-
-    return '';
+    return result;
   } catch (e) {
     console.warn('Failed to parse date:', dateValue);
     return '';
   }
+}
+
+/**
+ * @deprecated Misleading name — use `formatDateCentral`. Kept as an alias so
+ * any forgotten callers continue to work. Will be removed once nothing imports it.
+ */
+export const formatDateUTC = formatDateCentral;
+
+function parseToCentralString(str) {
+  // Try direct parse (ambiguous strings forced to UTC, then formatted in Central)
+  let date = parseAsUTC(str);
+  if (date) return formatDateComponents(date);
+
+  // Handle relative time prefix (e.g., "14 hours agoFeb 7, 2026 8:20 PM")
+  const agoIndex = str.lastIndexOf('ago');
+  if (agoIndex !== -1) {
+    date = parseAsUTC(str.slice(agoIndex + 3).trim());
+    if (date) return formatDateComponents(date);
+  }
+
+  // Try extracting a month-based date pattern (e.g., "Feb 7, 2026 8:20 PM")
+  const monthPattern = /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},?\s+\d{4}[\s\d:APMapm]*/i;
+  const monthMatch = str.match(monthPattern);
+  if (monthMatch) {
+    date = parseAsUTC(monthMatch[0].trim());
+    if (date) return formatDateComponents(date);
+  }
+
+  return '';
 }
 
 /**

@@ -1,26 +1,29 @@
 #!/usr/bin/env node
+/**
+ * Date normalization tool for the main commissions sheet.
+ *
+ * Originally written as a one-shot UTC→Central migration in 2026-04. After
+ * that migration ran, the script's semantics changed: it now normalizes any
+ * row whose date columns do NOT match the canonical `YYYY-MM-DD HH:MM:SS`
+ * Central-time format. Canonical rows are left alone.
+ *
+ * That makes it safe to re-run as a maintenance tool when legacy or
+ * scraper-corrupted date strings show up (e.g. the May 2026 Refersion
+ * leftovers and the "Joola" row).
+ *
+ * Trigger: `Migrate dates to Central time` workflow (workflow_dispatch only).
+ */
 import { google } from 'googleapis';
 import { readFile } from 'fs/promises';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { formatDateCentral } from './transformer.js';
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const SHEET_NAME = 'Comissions';
-const DATE_COLS = [3, 8, 9, 10];
-
-function utcStringToCentral(str) {
-  if (!str || !str.trim()) return str;
-  const date = new Date(str.trim().replace(' ', 'T') + 'Z');
-  if (isNaN(date.getTime())) return str;
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/Chicago',
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit',
-    hour12: false,
-  }).formatToParts(date);
-  const get = type => parts.find(p => p.type === type).value;
-  return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}:${get('second')}`;
-}
+const DATE_COLS = [3, 8, 9, 10]; // order_date, click_date, validation_date, modified_date
+const CANONICAL_RE = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
 
 async function main() {
   const credentialsPath = process.env.GOOGLE_CREDENTIALS_PATH || resolve(__dirname, '../../../credentials.json');
@@ -35,26 +38,40 @@ async function main() {
   const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${SHEET_NAME}!A:V` });
   const rows = res.data.values || [];
   if (rows.length < 2) { console.log('No data rows found.'); return; }
-  console.log(`📊 Found ${rows.length - 1} data rows. Converting dates...`);
+  console.log(`📊 Found ${rows.length - 1} data rows. Looking for non-canonical date strings...`);
 
-  let changed = 0;
-  const updatedRows = rows.map((row, i) => {
-    if (i === 0) return row;
-    const newRow = [...row];
+  const updates = [];
+  let normalized = 0;
+  let unparseable = 0;
+
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
     for (const col of DATE_COLS) {
-      const converted = utcStringToCentral(row[col]);
-      if (converted !== row[col]) { newRow[col] = converted; changed++; }
+      const value = row[col];
+      if (!value || CANONICAL_RE.test(value)) continue;
+      const fixed = formatDateCentral(value);
+      if (!fixed) {
+        console.warn(`  ⚠️  Row ${i + 1} col ${String.fromCharCode(65 + col)}: could not parse "${value}" — skipped`);
+        unparseable++;
+        continue;
+      }
+      updates.push({ range: `${SHEET_NAME}!${String.fromCharCode(65 + col)}${i + 1}`, values: [[fixed]] });
+      console.log(`  ✏️  Row ${i + 1} col ${String.fromCharCode(65 + col)}: "${value}" → "${fixed}"`);
+      normalized++;
     }
-    return newRow;
-  });
+  }
 
-  if (changed === 0) { console.log('✅ No dates needed conversion.'); return; }
-  console.log(`✏️  Updating ${changed} date values...`);
-  await sheets.spreadsheets.values.update({
-    spreadsheetId, range: `${SHEET_NAME}!A1`,
-    valueInputOption: 'RAW', requestBody: { values: updatedRows },
+  if (normalized === 0) {
+    console.log('✅ All date columns already canonical. Nothing to do.');
+    return;
+  }
+
+  console.log(`\n✏️  Applying ${normalized} normalizations...`);
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId,
+    requestBody: { valueInputOption: 'RAW', data: updates },
   });
-  console.log(`✅ Done! Converted ${changed} date values to Central time.`);
+  console.log(`✅ Done. Normalized ${normalized} cells. ${unparseable ? `(${unparseable} were unparseable and left as-is.)` : ''}`);
 }
 
 main().catch(e => { console.error('❌', e.message); process.exit(1); });
