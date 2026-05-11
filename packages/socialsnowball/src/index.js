@@ -9,7 +9,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: resolve(__dirname, '../../../.env') });
 import { scrapePayouts, debugPageStructure } from './scraper.js';
 import { createTransformer } from '@kitchen/shared/transformer';
-import { uploadToSheets, validateAccess, getServiceAccountEmail, createSpreadsheet, removeRows, readSheetRows } from '@kitchen/shared/sheets';
+import { reconcileToSheets, validateAccess, getServiceAccountEmail, createSpreadsheet, removeRows, readSheetRows } from '@kitchen/shared/sheets';
 import { writeFile } from 'fs/promises';
 import { FIELD_MAPPINGS, STATUS_MAPPINGS, getAccount, ACCOUNT_NAMES, DEFAULT_ACCOUNT, extractProductTitle, extractCommissionAmount, extractSaleAmount, extractCurrency } from './config.js';
 
@@ -208,26 +208,25 @@ async function processAccount(accountName, args) {
     throw new Error('Upload-only mode not implemented');
   }
 
-  console.log('📤 Uploading to Google Sheets...\n');
-  const result = await uploadToSheets({
+  console.log('📤 Reconciling with Google Sheets...\n');
+  const result = await reconcileToSheets({
     spreadsheetId: config.spreadsheetId,
     credentialsPath: config.credentialsPath,
     records,
+    advertiserId: account.advertiserId,
     sheetName: config.sheetName,
-    clearFirst: args.includes('--clear'),
-    dedupeByTransactionId: !args.includes('--no-dedupe'),
   });
 
   console.log('\n═══════════════════════════════════════════════════════════');
   console.log('  ✅ Complete!');
   console.log('═══════════════════════════════════════════════════════════');
-  console.log(`  📊 Total records:    ${result.total}`);
-  console.log(`  ✅ Uploaded:         ${result.uploaded}`);
-  console.log(`  ⏭️  Skipped (dupes):  ${result.skipped}`);
+  console.log(`  📥 Inserted:        ${result.inserted}`);
+  console.log(`  🔄 Updated:         ${result.updated}`);
+  console.log(`  🗑️  Deleted (ghost): ${result.deleted}${result.deleteAborted ? ' (DELETES ABORTED BY SAFETY GUARD)' : ''}`);
   console.log(`  🔗 Sheet: https://docs.google.com/spreadsheets/d/${config.spreadsheetId}`);
   console.log('═══════════════════════════════════════════════════════════\n');
 
-  return { records: records.length, uploaded: result.uploaded, skipped: result.skipped };
+  return { records: records.length, inserted: result.inserted, updated: result.updated, deleted: result.deleted };
 }
 
 /**

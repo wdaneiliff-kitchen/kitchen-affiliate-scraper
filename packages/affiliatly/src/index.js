@@ -9,7 +9,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: resolve(__dirname, '../../../.env') });
 import { scrapeCommissions, debugPageStructure } from './scraper.js';
 import { createTransformer, filterValidCommissionRecords } from '@kitchen/shared/transformer';
-import { uploadToSheets, validateAccess, getServiceAccountEmail, createSpreadsheet } from '@kitchen/shared/sheets';
+import { reconcileToSheets, validateAccess, getServiceAccountEmail, createSpreadsheet } from '@kitchen/shared/sheets';
 import { writeFile } from 'fs/promises';
 import { FIELD_MAPPINGS, STATUS_MAPPINGS, getAccount, ACCOUNT_NAMES, DEFAULT_ACCOUNT, extractProductTitle, extractCommissionAmount, extractSaleAmount, extractCurrency } from './config.js';
 
@@ -161,25 +161,21 @@ async function main() {
       process.exit(1);
     }
 
-    console.log('📤 Uploading to Google Sheets...\n');
-    const result = await uploadToSheets({
+    console.log('📤 Reconciling with Google Sheets...\n');
+    const result = await reconcileToSheets({
       spreadsheetId: config.spreadsheetId,
       credentialsPath: config.credentialsPath,
       records,
+      advertiserId: account.advertiserId,
       sheetName: config.sheetName,
-      clearFirst: args.includes('--clear'),
-      dedupeByTransactionId: !args.includes('--no-dedupe'),
     });
 
     console.log('\n═══════════════════════════════════════════════════════════');
     console.log('  ✅ Complete!');
     console.log('═══════════════════════════════════════════════════════════');
-    console.log(`  📊 Total records:    ${result.total}`);
-    if (result.invalid > 0) {
-      console.log(`  ⚠️  Invalid (filtered): ${result.invalid}`);
-    }
-    console.log(`  ✅ Uploaded:         ${result.uploaded}`);
-    console.log(`  ⏭️  Skipped (dupes):  ${result.skipped}`);
+    console.log(`  📥 Inserted:        ${result.inserted}`);
+    console.log(`  🔄 Updated:         ${result.updated}`);
+    console.log(`  🗑️  Deleted (ghost): ${result.deleted}${result.deleteAborted ? ' (DELETES ABORTED BY SAFETY GUARD)' : ''}`);
     console.log(`  🔗 Sheet: https://docs.google.com/spreadsheets/d/${config.spreadsheetId}`);
     console.log('═══════════════════════════════════════════════════════════\n');
 

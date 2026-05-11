@@ -246,6 +246,158 @@ export async function validateAccess({ credentialsPath, spreadsheetId }) {
 }
 
 /**
+ * Reconciles a scraper's full output against the sheet for a single advertiser.
+ *
+ * Three-way diff scoped by advertiser_id:
+ *   INSERT: tx_ids in source but not sheet → append
+ *   UPDATE: tx_ids in both but row contents differ → rewrite the row
+ *   DELETE: tx_ids in sheet but not source → drop (sale was cancelled / removed at source)
+ *
+ * The append-only upload flow could not detect deletions, so cancelled/refunded
+ * sales accumulated as "ghosts" and inflated dashboard totals (May 2026 incident).
+ * This function makes the sheet a true mirror of the source.
+ *
+ * Safety guard: if the source's count for this advertiser is less than half of
+ * what the sheet already has AND there are more than 5 existing rows, the delete
+ * step is skipped and a warning is logged. Protects against a transient scraper
+ * bug (partial pagination, auth failure, source outage) nuking real data.
+ *
+ * @param {Object} options
+ * @param {string} options.spreadsheetId
+ * @param {string} options.credentialsPath
+ * @param {Array} options.records - Transformed records (the COMPLETE current set for advertiserId)
+ * @param {string} options.advertiserId - REQUIRED. Scope of the reconcile.
+ * @param {string} [options.sheetName='Comissions']
+ * @returns {Promise<{inserted: number, updated: number, deleted: number, skippedDeletes: number, deleteAborted: boolean}>}
+ */
+export async function reconcileToSheets({
+  spreadsheetId,
+  credentialsPath,
+  records,
+  advertiserId,
+  sheetName = 'Comissions',
+}) {
+  if (!advertiserId) {
+    throw new Error('reconcileToSheets requires advertiserId — refusing to run unscoped to avoid touching other advertisers');
+  }
+
+  const validRecords = filterValidCommissionRecords(records);
+  const invalidCount = records.length - validRecords.length;
+  if (invalidCount > 0) console.log(`⚠️ Skipping ${invalidCount} invalid records (missing order_date or zero amounts)`);
+
+  const sourceByTxId = new Map();
+  for (const r of validRecords) {
+    if (r.advertiser_id !== advertiserId) continue; // defensive: only handle this advertiser
+    sourceByTxId.set(String(r.transaction_id), r);
+  }
+  console.log(`🔄 Reconciling ${sourceByTxId.size} source records for advertiser_id="${advertiserId}"...`);
+
+  // Read sheet, scope to this advertiser
+  const { headers, rows } = await readSheetRows({ spreadsheetId, credentialsPath, sheetName });
+  if (!headers.length) {
+    console.log('   Sheet is empty, falling through to insert-only path');
+  }
+  const sheetForAdvertiser = rows.filter(r => r.advertiser_id === advertiserId);
+  const sheetByTxId = new Map(sheetForAdvertiser.map(r => [String(r.transaction_id), r]));
+
+  // Compute diff
+  const toInsert = [];
+  const toUpdate = []; // { rowIndex, record }
+  for (const [txId, rec] of sourceByTxId) {
+    const existing = sheetByTxId.get(txId);
+    if (!existing) {
+      toInsert.push(rec);
+      continue;
+    }
+    // Detect any field difference (rec is the source of truth)
+    let differs = false;
+    for (const h of headers) {
+      if (h === '_rowIndex') continue;
+      const sheetVal = String(existing[h] ?? '');
+      const sourceVal = String(rec[h] ?? '');
+      if (sheetVal !== sourceVal) { differs = true; break; }
+    }
+    if (differs) toUpdate.push({ rowIndex: existing._rowIndex, record: rec });
+  }
+  const toDelete = sheetForAdvertiser.filter(r => !sourceByTxId.has(String(r.transaction_id)));
+
+  // Safety guard against partial scrape causing mass deletion
+  const existingCount = sheetForAdvertiser.length;
+  const sourceCount = sourceByTxId.size;
+  const guardTriggered = existingCount > 5 && sourceCount < existingCount * 0.5;
+  let deletesApplied = 0;
+  let deleteAborted = false;
+
+  console.log(`   📥 ${toInsert.length} to insert, 🔄 ${toUpdate.length} to update, 🗑️  ${toDelete.length} ghost rows to delete`);
+
+  const sheets = await getAuthenticatedClient(credentialsPath);
+
+  // 1) UPDATES — batched values.batchUpdate
+  if (toUpdate.length > 0) {
+    const headerCols = getHeaders();
+    const data = toUpdate.map(({ rowIndex, record }) => ({
+      range: `${sheetName}!A${rowIndex + 1}`, // +1: rowIndex is data-index (1-based in readSheetRows; header is row 1; data starts row 2; rowIndex 1 → sheet row 2)
+      values: [headerCols.map(h => String(record[h] ?? ''))],
+    }));
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId,
+      requestBody: { valueInputOption: 'RAW', data },
+    });
+    console.log(`   ✅ Updated ${toUpdate.length} rows`);
+  }
+
+  // 2) INSERTS — values.append
+  if (toInsert.length > 0) {
+    const headerCols = getHeaders();
+    const values = toInsert.map(rec => headerCols.map(h => String(rec[h] ?? '')));
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: `${sheetName}!A:V`,
+      valueInputOption: 'RAW',
+      insertDataOption: 'INSERT_ROWS',
+      requestBody: { values },
+    });
+    console.log(`   ✅ Inserted ${toInsert.length} new rows`);
+  }
+
+  // 3) DELETES — with safety guard
+  if (toDelete.length > 0) {
+    if (guardTriggered) {
+      console.warn(`   ⚠️  SAFETY GUARD TRIGGERED: source has ${sourceCount} records but sheet has ${existingCount} for "${advertiserId}". Refusing to delete ${toDelete.length} rows — likely a partial scrape. Re-run when full data is available.`);
+      deleteAborted = true;
+    } else {
+      // Resolve sheetId for deleteDimension
+      const meta = await sheets.spreadsheets.get({ spreadsheetId });
+      const sheetMeta = meta.data.sheets.find(s => s.properties.title === sheetName);
+      if (!sheetMeta) throw new Error(`Sheet tab "${sheetName}" not found`);
+      const sheetTabId = sheetMeta.properties.sheetId;
+
+      // rowIndex in readSheetRows is 1-based for data rows (header is implicit row 0 in API terms).
+      // To convert to 0-based API row index: header row is 0, first data row is 1 → API index = _rowIndex.
+      const requests = toDelete
+        .map(r => r._rowIndex)
+        .sort((a, b) => b - a) // bottom-to-top so indices stay stable
+        .map(apiRowIdx => ({
+          deleteDimension: {
+            range: { sheetId: sheetTabId, dimension: 'ROWS', startIndex: apiRowIdx, endIndex: apiRowIdx + 1 },
+          },
+        }));
+      await sheets.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests } });
+      deletesApplied = toDelete.length;
+      console.log(`   🗑️  Deleted ${deletesApplied} ghost rows (no longer in source)`);
+    }
+  }
+
+  return {
+    inserted: toInsert.length,
+    updated: toUpdate.length,
+    deleted: deletesApplied,
+    skippedDeletes: deleteAborted ? toDelete.length : 0,
+    deleteAborted,
+  };
+}
+
+/**
  * Removes rows from a Google Sheet that match a predicate.
  * Reads the sheet, identifies matching rows by their 0-based row index,
  * then deletes them bottom-to-top so indices stay stable.
