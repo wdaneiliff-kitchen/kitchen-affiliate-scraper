@@ -321,10 +321,17 @@ export async function reconcileToSheets({
   }
   const toDelete = sheetForAdvertiser.filter(r => !sourceByTxId.has(String(r.transaction_id)));
 
-  // Safety guard against partial scrape causing mass deletion
+  // Safety guard against partial scrape causing mass deletion.
+  // Only fires for clearly catastrophic patterns — returned 0 records, or
+  // returned tiny absolute count when the sheet has many. The original 50%
+  // threshold was too aggressive: legitimate first-time ghost cleanup can
+  // easily exceed 50% deletion. The drift audit watchdog is the second
+  // line of defense and will alert next morning if reconcile over-deletes.
   const existingCount = sheetForAdvertiser.length;
   const sourceCount = sourceByTxId.size;
-  const guardTriggered = existingCount > 5 && sourceCount < existingCount * 0.5;
+  const guardTriggered =
+    (existingCount > 0 && sourceCount === 0) ||         // source returned literally nothing
+    (existingCount > 20 && sourceCount < 3);            // tiny source count vs. substantial sheet
   let deletesApplied = 0;
   let deleteAborted = false;
 
