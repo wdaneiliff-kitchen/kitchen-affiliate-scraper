@@ -100,9 +100,10 @@ Full column reference: see `docs/LOOKER_STUDIO.md`.
 
 ### Special tabs in the sheet
 
-- `Comissions` (sic) — main append-only commission rows from all scrapers
+- `Comissions` (sic) — main commission rows from all scrapers (reconciled, not append-only — see Conventions)
 - `RPM Commissions` — RPM cumulative tracking (Sales + Earned columns from Shopify Collabs analytics page)
 - `RPM Daily Snapshots` — end-of-day closing totals; written nightly at 11:59pm Central by `rpm-eod-snapshot.yml`
+- `Drift Audit` — per-brand row count + commission totals snapshotted nightly by `drift-audit.yml` for the day-over-day watchdog
 
 ### How RPM is different
 
@@ -136,6 +137,7 @@ Cookies live in each package's `.cookies/` folder, are cached across GH Actions 
 - **Main scrape:** `.github/workflows/scrape-and-upload.yml` runs on cron every 1.5 hours from 7am–11:30pm Central (12 runs/day). Both DST and standard-time-aware crons are listed.
 - **RPM EOD snapshot:** `.github/workflows/rpm-eod-snapshot.yml` fires at 11:59pm Central every day. Two crons handle CDT (`59 4 * * *`) and CST (`59 5 * * *`). It reconciles the day's RPM commission and writes the closing snapshot.
 - **Migration:** `.github/workflows/migrate-dates.yml` is `workflow_dispatch` only — a one-time tool, do not schedule.
+- **Drift audit:** `.github/workflows/drift-audit.yml` runs at 11:50pm Central daily. Snapshots per-brand row count + commission total into the `Drift Audit` sheet tab, compares to the prior day, Slack-alerts if any brand lost more than 5 rows AND 5% (or $100 AND 5% commission). Defense-in-depth — catches a silently-broken reconcile flow that the safety guard didn't trip. If you see a drift alert: check the most recent scrape's logs first (a SAFETY GUARD warning explains it), then check if a scraper bug caused legitimate-looking rows to get over-deleted.
 
 Each scraper runs in its own subshell so one failure doesn't block the rest. Failures notify Slack `#tech` via `SLACK_WEBHOOK_URL`. The job also pre-checks **cookie expiry** (warns if any cookie expires within 7 days) and **2Captcha balance** (warns at $5, critical at $1).
 

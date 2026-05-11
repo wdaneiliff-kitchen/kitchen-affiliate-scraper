@@ -1,0 +1,43 @@
+name: Drift audit (nightly)
+
+# Snapshots per-brand row count + commission total, compares to yesterday's
+# snapshot, Slack-alerts if any brand dropped beyond threshold. Catches a
+# silently-broken reconcile flow. Fires at 11:50pm Central — 5 min before the
+# EOD snapshot so we have a stable end-of-day picture.
+on:
+  schedule:
+    - cron: '50 4 * * *'  # 11:50 PM CDT (Apr–Oct)
+    - cron: '50 5 * * *'  # 11:50 PM CST (Nov–Mar)
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: main
+    env:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --filter @kitchen/shared
+
+      - name: Write Google credentials
+        env:
+          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+        run: node -e "require('fs').writeFileSync('credentials.json', process.env.GOOGLE_CREDENTIALS_JSON || '')"
+
+      - name: Run drift audit
+        env:
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          GOOGLE_CREDENTIALS_PATH: ${{ github.workspace }}/credentials.json
+        run: node packages/shared/src/drift-audit.js
