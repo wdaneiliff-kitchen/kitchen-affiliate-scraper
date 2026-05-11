@@ -305,8 +305,15 @@ jobs:
           )
           curl -s -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK_URL" || true
 
+      # Only save the cookie cache when the scrape step succeeded. Previously
+      # this ran on `if: always()`, which meant a failed run with stale/expired
+      # cookies would re-save those stale cookies back to the cache, and the
+      # next run would restore them — locking in a permanent failure loop even
+      # after the operator committed fresh cookies. Saving on success only
+      # means failed runs leave the cache untouched, so fresh committed cookies
+      # take effect on the very next run.
       - name: Save session cookies cache
-        if: always()
+        if: steps.scrape.outcome == 'success'
         uses: actions/cache/save@v4
         with:
           path: |
