@@ -30,11 +30,13 @@ name: Scrape and upload commissions
 
 on:
   schedule:
-    # Every 1.5 hours, 7am–11:30pm Central (CDT = UTC-5)
-    # 7:00am, 8:30am, 10:00am, 11:30am, 1:00pm, 2:30pm
-    # 4:00pm, 5:30pm, 7:00pm,  8:30pm,  10:00pm, 11:30pm
-    - cron: '0 12,15,18,21,0,3 * * *'
-    - cron: '30 13,16,19,22,1,4 * * *'
+    # Daily cadence in CDT (CST shifts everything 1 hour earlier; GH cron has
+    # no timezone support, so the schedule slides with DST):
+    # 7:00am, 8:30am, 10:00am, 11:30am, 1:00pm, 2:30pm,
+    # 4:00pm, 5:30pm, 7:00pm,  8:30pm,  10:00pm, 11:00pm, 11:45pm
+    - cron: '0 12,15,18,21,0,3,4 * * *'   # :00 slots — last is 11pm Central
+    - cron: '30 13,16,19,22,1 * * *'      # :30 slots
+    - cron: '45 4 * * *'                  # 11:45pm Central — last scrape of the night
   workflow_dispatch:
 
 jobs:
