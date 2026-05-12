@@ -67,6 +67,23 @@ jobs:
           const centralDate = `${centralParts.year}-${centralParts.month}-${centralParts.day}`;
           const nowCentral  = `${centralDate} ${centralParts.hour}:${centralParts.minute}:${centralParts.second}`;
 
+          // If we're firing in the small hours (GH Actions schedule delay, or the
+          // CST cron firing during CDT), reconcile YESTERDAY instead — the job is
+          // intended for 11:59pm Central, so a post-midnight clock means the day
+          // we actually mean to close out is the previous one. Without this, the
+          // script would attribute yesterday's totals to today.
+          const hour = parseInt(centralParts.hour, 10);
+          let reconcileDate = centralDate;
+          let reconcileTimestamp = nowCentral;
+          if (hour < 6) {
+            const [yy, mm, dd] = centralDate.split('-').map(Number);
+            const prev = new Date(Date.UTC(yy, mm - 1, dd));
+            prev.setUTCDate(prev.getUTCDate() - 1);
+            reconcileDate = prev.toISOString().slice(0, 10);
+            reconcileTimestamp = `${reconcileDate} 23:59:${centralParts.second}`;
+            console.log(`Late run detected (hour ${hour} Central) — reconciling ${reconcileDate} instead of ${centralDate}`);
+          }
+
           // 1. Ensure snapshot tab exists before any reads
           const meta = await sheets.spreadsheets.get({ spreadsheetId });
           const tabExists = meta.data.sheets.some(s => s.properties.title === SNAPSHOT_TAB);
@@ -93,7 +110,7 @@ jobs:
           // 3. Get yesterday's snapshot to compute today's full day total
           const snapRes = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${SNAPSHOT_TAB}!A:D` });
           const snapRows = (snapRes.data.values || []).slice(1);
-          const yesterdayRow = snapRows.filter(r => r[0] < centralDate).slice(-1)[0];
+          const yesterdayRow = snapRows.filter(r => r[0] < reconcileDate).slice(-1)[0];
           if (!yesterdayRow) {
             console.log('No prior snapshot found — skipping gap calculation to avoid writing bad data.');
             console.log('Write a baseline snapshot manually, then this job will work correctly going forward.');
@@ -109,7 +126,7 @@ jobs:
           // 4. Sum what's already been written to the main sheet for today from RPM
           const mainRes = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${MAIN_TAB}!A:H` });
           const mainRows = (mainRes.data.values || []).slice(1);
-          const todayRpmRows = mainRows.filter(r => r[1] === ADVERTISER_ID && (r[3] || '').startsWith(centralDate));
+          const todayRpmRows = mainRows.filter(r => r[1] === ADVERTISER_ID && (r[3] || '').startsWith(reconcileDate));
           const alreadyWrittenCents = todayRpmRows.reduce((sum, r) => sum + parseInt(r[6] || '0', 10), 0);
           console.log(`Already written today: $${(alreadyWrittenCents / 100).toFixed(2)}`);
 
@@ -131,7 +148,7 @@ jobs:
               ];
               const record = {
                 transaction_id: txId, advertiser_id: ADVERTISER_ID,
-                advertiser_name: 'RPM Pickleball', order_date: nowCentral,
+                advertiser_name: 'RPM Pickleball', order_date: reconcileTimestamp,
                 currency_id: 'USD', sale_amount: String(saleCents),
                 commission_amount: String(gapCents), status: 'approved',
               };
@@ -148,16 +165,16 @@ jobs:
             console.log('No gap — intraday rows already account for the full day.');
           }
 
-          // 6. Write today's snapshot (skip if already exists)
-          const alreadySnapped = snapRows.some(r => r[0] === centralDate);
+          // 6. Write the snapshot for the day we reconciled (skip if already exists)
+          const alreadySnapped = snapRows.some(r => r[0] === reconcileDate);
           if (!alreadySnapped) {
             const nextRow = snapRows.length + 2;
             await sheets.spreadsheets.values.update({
               spreadsheetId, range: `${SNAPSHOT_TAB}!A${nextRow}`, valueInputOption: 'RAW',
-              requestBody: { values: [[centralDate, String(todayCumulativeSales), todayCumulative.toFixed(2), nowCentral]] },
+              requestBody: { values: [[reconcileDate, String(todayCumulativeSales), todayCumulative.toFixed(2), reconcileTimestamp]] },
             });
-            console.log(`✅ Snapshot written: ${centralDate} | sales=${todayCumulativeSales} | earned=$${todayCumulative.toFixed(2)}`);
+            console.log(`✅ Snapshot written: ${reconcileDate} | sales=${todayCumulativeSales} | earned=$${todayCumulative.toFixed(2)}`);
           } else {
-            console.log(`Snapshot for ${centralDate} already recorded.`);
+            console.log(`Snapshot for ${reconcileDate} already recorded.`);
           }
           EOF
