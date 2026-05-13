@@ -1,0 +1,33 @@
+name: Slack webhook test
+
+# One-shot diagnostic. Posts a single test message via SLACK_WEBHOOK_URL.
+# Use this to verify the webhook is wired up to the channel you expect.
+# Trigger manually from the GitHub Actions UI or with: gh workflow run slack-webhook-test.yml
+on:
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    environment: main
+    env:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+    steps:
+      - name: Post a test message
+        run: |
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then
+            echo "❌ SLACK_WEBHOOK_URL secret is not set"
+            exit 1
+          fi
+          payload='{"text":":wave: *Slack webhook test* — if you can read this in your channel, the kitchen-affiliate-scraper webhook is wired up correctly. Triggered by `slack-webhook-test.yml` workflow_dispatch."}'
+          http_status=$(curl -s -o /tmp/resp.txt -w "%{http_code}" -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK_URL")
+          echo "Slack webhook responded with HTTP $http_status"
+          echo "Response body:"
+          cat /tmp/resp.txt
+          echo
+          if [ "$http_status" != "200" ]; then
+            echo "❌ Webhook did not return 200 — likely misconfigured, revoked, or pointing nowhere."
+            exit 1
+          fi
+          echo "✅ Webhook returned HTTP 200 — Slack accepted the message."
