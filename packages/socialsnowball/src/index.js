@@ -159,6 +159,7 @@ async function processAccount(accountName, args) {
   }
 
   let records;
+  let scrapeMetrics = [];
 
   if (!uploadOnly) {
     console.log(`📊 Scraping SocialSnowball payouts for ${account.advertiserName}...\n`);
@@ -170,7 +171,7 @@ async function processAccount(accountName, args) {
       headless,
     });
     const rawPayouts = scrapeResult.payouts;
-    const scrapeMetrics = scrapeResult.metrics || [];
+    scrapeMetrics = scrapeResult.metrics || [];
 
     console.log(`\n📦 Raw records scraped: ${rawPayouts.length}`);
 
