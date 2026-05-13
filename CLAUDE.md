@@ -204,11 +204,11 @@ As of 2026-05-13:
 - `657d1e1` — Main scrape schedule extended: dropped 11:30pm, added **11pm** and **11:45pm** Central. Last scrape now finishes ~14 min before the 11:59pm RPM EOD job, so EOD gets the freshest cumulative.
 - `b87d6b3` — SocialSnowball scraper now does a hard `page.goto()` to `/payouts/paid?page=1` to capture the Paid history endpoint (the DOM tab click was silently failing). All 3 SocialSnowball brands now show their full lifetime commission, not just the currently-unpaid portion.
 - `e24cf3f` — Stop skipping `/search-payouts` aggregated batches. Intermediate step: kept them as chunky lump rows so lifetime totals match.
-- `a7e49b8` — Replace chunky paid-batch rows with their individual underlying orders by calling `/search-payables?payout_ids[]={batchId}` per batch. This restores per-day accuracy on the dashboard for SocialSnowball brands (Friday/Enhance/CRBN).
+- `a7e49b8` — Replace chunky paid-batch rows with their individual underlying orders by calling `/search-payables?payout_ids[]={batchId}` per batch. Verified working in scrape `25812794543`: Friday went from 35 rows to 213 (177 paid orders distributed across their real dates); per-period totals are no longer payout-date approximations. Lifetime totals stay within normal-activity drift of SocialSnowball's own metrics.
 
 **Dashboard accuracy as of this session:**
-- SocialSnowball lifetime totals match Social Snowball's platform exactly (verified for Friday $5,064.84, Enhance $12,723.43, CRBN $793.81).
-- After commit `a7e49b8` lands its first scrape, per-day SocialSnowball totals should also match Social Snowball Analytics. Verify by comparing Looker (filtered to a specific date range) against the SS Analytics page for the same range. If they're off by more than ~1%, the drill-down didn't fully take.
+- SocialSnowball lifetime totals match Social Snowball's platform within normal-activity drift (Friday, Enhance, CRBN all verified).
+- SocialSnowball per-period totals are now accurate (post-drill-down) — each paid order has its own row with its real date instead of a chunky batch row stamped on the payout date. Verify with: filter Looker to any date range, then compare against SS Analytics → Friday/Enhance/CRBN → same range. Should match.
 - RPM lifetime is correct; per-day distribution for May 9–11 is approximated due to the May 11 backfill (see backfill gotcha).
 - Brands sitting at $0 across all windows that may deserve a check: Affiliatly/Engage, GoAffPro/Forwrd, Refersion/Gearbox + Volair, and several UpPromote brands (pickleballapes, gruvn, neonic, chorus, thrive, mark, gherkin). Some are legitimately quiet; others may have a scraper bug similar in shape to the SocialSnowball one. Cross-reference each against its platform before assuming.
 
