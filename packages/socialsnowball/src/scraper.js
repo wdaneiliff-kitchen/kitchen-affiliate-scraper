@@ -531,6 +531,12 @@ export async function scrapePayouts({ email, password, merchantName, headless = 
       }
     }
 
+    // Drill into each paid batch to fetch the individual underlying orders
+    // with their real dates. Without this, paid commissions show up on the
+    // sheet as chunky lump rows stamped on the payout date — inflating any
+    // date-window analysis that crosses a payout boundary.
+    payouts = await drillIntoPaidBatches(payouts, apiResponses);
+
     // Fall back to DOM parsing ONLY if we didn't get any API response
     // (If API returned empty array, that's valid - no pending payouts)
     if (payouts.length === 0 && apiResponses.length === 0) {
@@ -644,6 +650,96 @@ async function fetchAllPayouts(capturedResponses, existingPayouts = []) {
   }
 
   return allRecords;
+}
+
+/**
+ * For each paid-batch placeholder in `payouts`, fetch the underlying individual
+ * orders via search-payables?payout_ids[]={batchId}. Each batch row is replaced
+ * with its constituent orders (preserving real per-order dates and IDs), so
+ * date-window queries against the sheet match SocialSnowball's own analytics.
+ *
+ * Borrows merchant_id and auth headers from the previously-captured unpaid
+ * search-payables response. If anything goes wrong for a particular batch, we
+ * fall back to keeping the batch row as a chunky placeholder rather than
+ * silently losing the commission.
+ */
+async function drillIntoPaidBatches(payouts, capturedResponses) {
+  const batches = payouts.filter((p) => p._is_paid_batch);
+  if (batches.length === 0) return payouts;
+
+  const unpaidResp = capturedResponses.find(
+    (r) => (r.url || '').toLowerCase().includes('search-payables')
+  );
+  if (!unpaidResp) {
+    console.log('   ⚠️ No captured search-payables response — cannot drill into paid batches');
+    return payouts;
+  }
+
+  const merchantId = new URL(unpaidResp.url).searchParams.get('merchant_id');
+  if (!merchantId) {
+    console.log('   ⚠️ Could not extract merchant_id — cannot drill into paid batches');
+    return payouts;
+  }
+  const headers = Object.fromEntries(
+    Object.entries(unpaidResp.requestHeaders || {}).filter(([k]) => !k.startsWith(':'))
+  );
+
+  console.log(`\n📦 Drilling into ${batches.length} paid batches for underlying orders (merchant ${merchantId})...`);
+
+  const result = [];
+  for (const p of payouts) if (!p._is_paid_batch) result.push(p);
+
+  for (const batch of batches) {
+    const collected = [];
+    let page = 1;
+    let drillFailed = false;
+    while (page <= 50) {
+      const drillUrl = new URL('https://api.socialsnowball.io/api/affiliate/payouts/payables/search-payables');
+      drillUrl.searchParams.set('per_page', '15');
+      drillUrl.searchParams.set('timezone', 'America/Chicago');
+      drillUrl.searchParams.append('payout_ids[]', String(batch.id));
+      drillUrl.searchParams.set('merchant_id', merchantId);
+      drillUrl.searchParams.set('page', String(page));
+
+      try {
+        const res = await fetch(drillUrl.toString(), { headers });
+        if (!res.ok) {
+          console.log(`   ⚠️ Batch ${batch.id} page ${page} returned ${res.status}, stopping`);
+          drillFailed = true;
+          break;
+        }
+        const data = await res.json();
+        const records = extractRecordsFromResponse(data);
+        if (!records || records.length === 0) break;
+        for (const r of records) {
+          if (r.is_grouped && Array.isArray(r.group) && r.group.length > 0) {
+            for (const order of r.group) {
+              collected.push({ ...order, _status: 'paid', _parent_payout_id: batch.id, _parent_payout_date: batch.payout_date });
+            }
+          } else {
+            collected.push({ ...r, _status: 'paid', _parent_payout_id: batch.id, _parent_payout_date: batch.payout_date });
+          }
+        }
+        const pagination = data.pagination || data.payload?.pagination || data.data?.pagination;
+        if (!pagination || !pagination.has_next_page) break;
+        page++;
+      } catch (err) {
+        console.log(`   ⚠️ Batch ${batch.id} drill error on page ${page}: ${err.message}`);
+        drillFailed = true;
+        break;
+      }
+    }
+
+    if (drillFailed || collected.length === 0) {
+      console.log(`   ↩️  Batch ${batch.id}: drill failed or empty — keeping chunky batch row`);
+      result.push(batch);
+    } else {
+      console.log(`   📋 Batch ${batch.id}: ${collected.length} underlying orders`);
+      result.push(...collected);
+    }
+  }
+
+  return result;
 }
 
 /**
