@@ -11,7 +11,8 @@
     ".": "./src/index.js",
     "./transformer": "./src/transformer.js",
     "./sheets": "./src/sheets.js",
-    "./scraper-base": "./src/scraper-base.js"
+    "./scraper-base": "./src/scraper-base.js",
+    "./audit-aggregates": "./src/audit-aggregates.js"
   },
   "dependencies": {
     "googleapis": "^128.0.0",

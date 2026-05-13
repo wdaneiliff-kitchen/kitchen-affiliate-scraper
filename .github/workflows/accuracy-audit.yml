@@ -1,0 +1,44 @@
+name: Accuracy audit (daily)
+
+# Compares each brand's platform-reported lifetime commission total against
+# the sum of rows on the Comissions sheet. Silent on clean days; posts to
+# Slack #tech when any brand is off by more than $50 AND >5%.
+#
+# Fires at 12:30 AM Central — after the last 11:45pm scrape, the 11:59pm RPM
+# EOD job, and the 11:50pm drift audit have all settled.
+on:
+  schedule:
+    - cron: '30 5 * * *'  # 12:30 AM CDT (Apr–Oct)
+    - cron: '30 6 * * *'  # 12:30 AM CST (Nov–Mar)
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: main
+    env:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --filter @kitchen/shared
+
+      - name: Write Google credentials
+        env:
+          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+        run: node -e "require('fs').writeFileSync('credentials.json', process.env.GOOGLE_CREDENTIALS_JSON || '')"
+
+      - name: Run accuracy audit
+        env:
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          GOOGLE_CREDENTIALS_PATH: ${{ github.workspace }}/credentials.json
+        run: node packages/shared/src/accuracy-audit.js

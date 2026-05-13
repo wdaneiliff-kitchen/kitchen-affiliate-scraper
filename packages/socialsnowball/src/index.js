@@ -10,6 +10,7 @@ dotenv.config({ path: resolve(__dirname, '../../../.env') });
 import { scrapePayouts, debugPageStructure } from './scraper.js';
 import { createTransformer } from '@kitchen/shared/transformer';
 import { reconcileToSheets, validateAccess, getServiceAccountEmail, createSpreadsheet, removeRows, readSheetRows } from '@kitchen/shared/sheets';
+import { writeAuditAggregate } from '@kitchen/shared/audit-aggregates';
 import { writeFile } from 'fs/promises';
 import { FIELD_MAPPINGS, STATUS_MAPPINGS, getAccount, ACCOUNT_NAMES, DEFAULT_ACCOUNT, extractProductTitle, extractCommissionAmount, extractSaleAmount, extractCurrency } from './config.js';
 
@@ -162,12 +163,14 @@ async function processAccount(accountName, args) {
   if (!uploadOnly) {
     console.log(`📊 Scraping SocialSnowball payouts for ${account.advertiserName}...\n`);
 
-    const rawPayouts = await scrapePayouts({
+    const scrapeResult = await scrapePayouts({
       email: config.email,
       password: config.password,
       merchantName: account.merchantName,
       headless,
     });
+    const rawPayouts = scrapeResult.payouts;
+    const scrapeMetrics = scrapeResult.metrics || [];
 
     console.log(`\n📦 Raw records scraped: ${rawPayouts.length}`);
 
@@ -216,6 +219,27 @@ async function processAccount(accountName, args) {
     advertiserId: account.advertiserId,
     sheetName: config.sheetName,
   });
+
+  // Persist the brand's lifetime aggregate so the nightly accuracy audit can
+  // cross-check it against the sum of rows on the Comissions sheet. The last
+  // metrics response captured during the scrape is the brand-specific one
+  // (the scraper navigates to the brand's payouts page before this fires).
+  if (scrapeMetrics.length > 0) {
+    const m = scrapeMetrics[scrapeMetrics.length - 1];
+    try {
+      await writeAuditAggregate({
+        spreadsheetId: config.spreadsheetId,
+        credentialsPath: config.credentialsPath,
+        advertiserId: account.advertiserId,
+        platform: 'socialsnowball',
+        lifetimePaidUsd: m.paid,
+        lifetimeOutstandingUsd: m.outstanding,
+        lifetimeConversionCount: m.conversionsCount,
+      });
+    } catch (err) {
+      console.log(`⚠️ Failed to write audit aggregate for ${account.advertiserId}: ${err.message}`);
+    }
+  }
 
   console.log('\n═══════════════════════════════════════════════════════════');
   console.log('  ✅ Complete!');

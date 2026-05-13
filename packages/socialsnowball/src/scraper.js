@@ -200,6 +200,7 @@ export async function scrapePayouts({ email, password, merchantName, headless = 
   const page = await createStealthPage(browser);
 
   const apiResponses = [];
+  const metricsResponses = [];
   /** Numeric id for routes like `/partnerships/{id}/payouts/unpaid` — from GET /api/affiliate/affiliates. */
   let resolvedPartnershipId = null;
 
@@ -232,9 +233,26 @@ export async function scrapePayouts({ email, password, merchantName, headless = 
         records = data;
       }
 
+      const urlLower = url.toLowerCase();
+
+      // Capture the `/get-payouts-metrics` aggregate response separately. This
+      // is the brand's lifetime paid + outstanding commission total, used by
+      // the accuracy-audit job to detect when the sheet has silently lost data
+      // (e.g. the 2026-05-12 SocialSnowball Paid-tab bug).
+      if (urlLower.includes('get-payouts-metrics') && data?.payload && typeof data.payload === 'object' && !Array.isArray(data.payload)) {
+        const p = data.payload;
+        if (typeof p.monetary_payables_paid_sum === 'number') {
+          metricsResponses.push({
+            paid: p.monetary_payables_paid_sum,
+            outstanding: p.monetary_payables_outstanding_sum,
+            conversionsCount: p.conversions_count,
+            conversionsBase: p.conversions_commission_base_sum,
+          });
+        }
+      }
+
       // Capture responses that look like payout data
       // Prioritize specific payout endpoints, exclude notifications
-      const urlLower = url.toLowerCase();
       const isPayoutEndpoint =
         urlLower.includes('payouts/pending') ||
         urlLower.includes('payouts/unpaid') ||
@@ -567,8 +585,12 @@ export async function scrapePayouts({ email, password, merchantName, headless = 
     }
 
     console.log(`\n✅ Scraped ${payouts.length} payout records`);
+    if (metricsResponses.length > 0) {
+      const last = metricsResponses[metricsResponses.length - 1];
+      console.log(`📊 Brand metrics: paid $${last.paid?.toFixed(2)} + outstanding $${last.outstanding?.toFixed(2)} = $${((last.paid || 0) + (last.outstanding || 0)).toFixed(2)} (${last.conversionsCount} conversions)`);
+    }
 
-    return payouts;
+    return { payouts, metrics: metricsResponses };
 
   } catch (error) {
     console.error('❌ Scraping failed:', error.message);
