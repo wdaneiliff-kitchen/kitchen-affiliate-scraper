@@ -482,6 +482,24 @@ export async function scrapePayouts({ email, password, merchantName, headless = 
       await sleep(5000);
     }
 
+    // Hard-navigate to the Paid history page. The DOM tab click above does
+    // not reliably trigger a fresh fetch (SocialSnowball's SPA seems to keep
+    // the unpaid tab's data cached), so the /search-payouts endpoint that
+    // serves paid history was never being captured. A real page.goto() forces
+    // React to mount the paid view from scratch, which fires the API call.
+    if (resolvedPartnershipId) {
+      const paidUrl = `${DASHBOARD_BASE}/partnerships/${resolvedPartnershipId}/payouts/paid?page=1`;
+      console.log(`📊 Loading Paid history page directly to capture paid endpoint...`);
+      console.log(`   🧭 Loading: ${paidUrl}`);
+      try {
+        await page.goto(paidUrl, { waitUntil: 'networkidle2', timeout: 60000 });
+        await sleep(5000);
+        console.log(`   Current URL: ${page.url()}`);
+      } catch (err) {
+        console.log(`   ⚠️ Failed to load Paid page: ${err.message}`);
+      }
+    }
+
     // Take a screenshot to debug the page structure
     await page.screenshot({ path: 'socialsnowball-payouts-page.png', fullPage: true });
     console.log('   📸 Saved debug screenshot: socialsnowball-payouts-page.png');
@@ -573,17 +591,21 @@ async function fetchAllPayouts(capturedResponses, existingPayouts = []) {
 
   if (capturedResponses.length === 0) return allRecords;
 
-  // Deduplicate endpoints by base URL, keeping the original URL and headers.
-  // Strip HTTP/2 pseudo-headers (e.g. :authority, :method) which are invalid
-  // for Node.js fetch.
+  // Deduplicate endpoints by URL with the `page` param stripped (but all
+  // other query params preserved). This way unpaid and paid endpoints — which
+  // may share a base path but differ by a filter param — are paginated as
+  // separate endpoints. Strip HTTP/2 pseudo-headers (e.g. :authority, :method)
+  // which are invalid for Node.js fetch.
   const endpointMap = new Map();
   for (const resp of capturedResponses) {
-    const baseUrl = resp.url.split('?')[0];
-    if (!endpointMap.has(baseUrl)) {
+    const u = new URL(resp.url);
+    u.searchParams.delete('page');
+    const key = u.toString();
+    if (!endpointMap.has(key)) {
       const headers = Object.fromEntries(
         Object.entries(resp.requestHeaders || {}).filter(([k]) => !k.startsWith(':'))
       );
-      endpointMap.set(baseUrl, { originalUrl: resp.url, headers });
+      endpointMap.set(key, { originalUrl: resp.url, headers });
     }
   }
 
