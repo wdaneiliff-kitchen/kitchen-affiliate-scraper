@@ -733,6 +733,7 @@ function extractFromApiResponses(apiResponses) {
 
       for (const record of records) {
         if (record.is_grouped && record.group && Array.isArray(record.group) && record.group.length > 0) {
+          // Best case: the record has its underlying orders in `group`. Flatten.
           console.log(`  └─ 📦 Flattening grouped payout: ${record.group.length} individual orders`);
           for (const order of record.group) {
             payouts.push({
@@ -742,7 +743,17 @@ function extractFromApiResponses(apiResponses) {
             });
           }
         } else if (isPaidEndpoint && isAggregatedBatch(record)) {
-          console.log(`  └─ ⏭️  Skipping aggregated payout batch: id=${record.id} amount=${record.amount?.value} revenue=${record.associated_revenue?.value}`);
+          // Paid endpoint batches don't carry their underlying orders. Keep
+          // them as a single chunky row so the dashboard total reflects the
+          // commission actually earned. order_date falls back to payout_date
+          // via the transformer's date-field chain. sub_id_2 gets a marker so
+          // these rows are easy to filter out of per-order analyses later.
+          console.log(`  └─ 📦 Keeping aggregated paid batch: id=${record.id} amount=${record.amount?.value} revenue=${record.associated_revenue?.value}`);
+          payouts.push({
+            ...record,
+            _status: resolveStatus(record),
+            _is_paid_batch: true,
+          });
         } else if (!isPaidEndpoint && !isUnpaidEndpoint && isAggregatedBatch(record)) {
           console.log(`  └─ ⏭️  Skipping aggregated payout batch (unknown endpoint): id=${record.id}`);
         } else {

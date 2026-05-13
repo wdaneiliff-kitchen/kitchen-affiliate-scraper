@@ -67,8 +67,10 @@ export const FIELD_MAPPINGS = {
   transaction_id: ['id'],
 
   // Date fields - different APIs use different field names
-  // payouts/paid uses 'order_date' directly, others use different names
-  order_date: ['order_date', 'source_item_external_created_at', 'date', 'created_at'],
+  // payouts/paid uses 'order_date' directly, others use different names.
+  // payout_date is a last-resort fallback for aggregated paid batches that
+  // don't carry an underlying order date (only the payout's own timestamp).
+  order_date: ['order_date', 'source_item_external_created_at', 'date', 'created_at', 'payout_date'],
   click_date: [],
   validation_date: ['payout_date'],  // Use payout_date as validation date for paid records
   modified_date: [],
