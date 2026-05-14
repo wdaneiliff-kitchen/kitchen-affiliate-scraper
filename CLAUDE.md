@@ -16,7 +16,7 @@ A **pnpm monorepo** of automated scrapers that collect affiliate commission data
 
 - Live sheet: https://docs.google.com/spreadsheets/d/1DWtmjS3575qsrOhEkv7IpjNp9YDtKEcleFpofKy9N4E/edit
 - Repo on GitHub: https://github.com/wdaneiliff-kitchen/kitchen-affiliate-scraper
-- Scheduled runs: 7am–11:45pm Central (13 runs/day) via GitHub Actions — every 1.5 hours through 10pm, then extra runs at 11pm and 11:45pm so the data feeding the 11:59pm RPM EOD job is as fresh as possible
+- Scheduled runs: 13 runs/day via GitHub Actions, targeted to land *finished data* in Looker by 7am, 8:30am, 10am, 11:30am, 1pm, 2:30pm, 4pm, 5:30pm, 7pm, 8:30pm, 10pm, 11pm, 11:45pm Central. Each cron actually fires 15 min before its target time (a ~13min scrape starting at 6:45am has the row written by ~6:58am, just before the 7am clock-tick). The 11:45pm scrape is positioned to finish ~14 min before the 11:59pm RPM EOD job, so EOD reconciles against fresh data.
 - Manual trigger: `pnpm scraper` (kicks off the GH Actions workflow) or the **Actions** tab on GitHub
 
 ---
@@ -134,7 +134,7 @@ Cookies live in each package's `.cookies/` folder, are cached across GH Actions 
 
 ## 6. Scheduling
 
-- **Main scrape:** `.github/workflows/scrape-and-upload.yml` runs on cron 7am–11:45pm Central (13 runs/day in CDT). Every 1.5 hours through 10pm, then 11pm and 11:45pm. GH Actions cron has no timezone support so the schedule slides 1 hour earlier in CST.
+- **Main scrape:** `.github/workflows/scrape-and-upload.yml` runs on cron 13 times/day, with each cron firing 15 min *before* its dashboard target so the ~13 min scrape finishes at the target tick (e.g. cron at 6:45am → row written by ~6:58am for the 7am clock-tick). Dashboard targets in CDT: 7am, 8:30am, 10am, 11:30am, 1pm, 2:30pm, 4pm, 5:30pm, 7pm, 8:30pm, 10pm, 11pm, 11:45pm. GH Actions cron has no timezone support so the schedule slides 1 hour earlier in CST.
 - **RPM EOD snapshot:** `.github/workflows/rpm-eod-snapshot.yml` fires at 11:59pm Central every day. Two crons handle CDT (`59 4 * * *`) and CST (`59 5 * * *`). It reconciles the day's RPM commission and writes the closing snapshot.
 - **Migration:** `.github/workflows/migrate-dates.yml` is `workflow_dispatch` only — a one-time tool, do not schedule.
 - **Drift audit:** `.github/workflows/drift-audit.yml` runs at 11:50pm Central daily. Snapshots per-brand row count + commission total into the `Drift Audit` sheet tab, compares to the prior day, Slack-alerts if any brand lost more than 5 rows AND 5% (or $100 AND 5% commission). Defense-in-depth — catches a silently-broken reconcile flow that the safety guard didn't trip. If you see a drift alert: check the most recent scrape's logs first (a SAFETY GUARD warning explains it), then check if a scraper bug caused legitimate-looking rows to get over-deleted.
