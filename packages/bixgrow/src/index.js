@@ -10,6 +10,7 @@ dotenv.config({ path: resolve(__dirname, '../../../.env') });
 import { scrapeCommissions, debugPageStructure } from './scraper.js';
 import { createTransformer } from '@kitchen/shared/transformer';
 import { reconcileToSheets, validateAccess, getServiceAccountEmail, createSpreadsheet } from '@kitchen/shared/sheets';
+import { writeAuditAggregate } from '@kitchen/shared/audit-aggregates';
 import { writeFile } from 'fs/promises';
 import { FIELD_MAPPINGS, STATUS_MAPPINGS, ADVERTISER_ID, ADVERTISER_NAME, extractProductTitle } from './config.js';
 
@@ -89,17 +90,20 @@ async function main() {
     }
 
     let records;
+    let scrapeAggregate = {};
 
     if (!uploadOnly) {
       console.log('📊 Scraping BixGrow commissions...\n');
 
-      const rawCommissions = await scrapeCommissions({
+      const scrapeResult = await scrapeCommissions({
         email: config.email,
         password: config.password,
         headless,
         startDate: config.startDate,
         endDate: config.endDate,
       });
+      const rawCommissions = scrapeResult.records;
+      scrapeAggregate = scrapeResult.aggregate || {};
 
       console.log(`\n📦 Raw records scraped: ${rawCommissions.length}`);
 
@@ -130,6 +134,23 @@ async function main() {
       advertiserId: ADVERTISER_ID,
       sheetName: config.sheetName,
     });
+
+    // Persist platform-side aggregate for the nightly accuracy audit.
+    // BixGrow's API returns a `total` field in pagination metadata; we use
+    // that as the platform's authoritative row count for the brand.
+    if (Number.isFinite(scrapeAggregate.platformCount)) {
+      try {
+        await writeAuditAggregate({
+          spreadsheetId: config.spreadsheetId,
+          credentialsPath: config.credentialsPath,
+          advertiserId: ADVERTISER_ID,
+          platform: 'bixgrow',
+          lifetimeConversionCount: scrapeAggregate.platformCount,
+        });
+      } catch (err) {
+        console.log(`⚠️ Failed to write audit aggregate: ${err.message}`);
+      }
+    }
 
     console.log('\n═══════════════════════════════════════════════════════════');
     console.log('  ✅ Complete!');

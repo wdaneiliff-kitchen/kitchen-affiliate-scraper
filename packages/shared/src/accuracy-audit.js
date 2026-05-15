@@ -27,6 +27,11 @@ import { readFile } from 'fs/promises';
 
 const TOLERANCE_DOLLARS = 50;
 const TOLERANCE_PERCENT = 0.05;
+// For count-based comparisons (when a platform exposes a row count, e.g. from
+// pagination metadata, but no separate $ aggregate): same shape as the drift
+// audit — alert when off by more than 5 rows AND 5%.
+const TOLERANCE_ROWS = 5;
+const TOLERANCE_ROW_PERCENT = 0.05;
 
 const SOCIAL_SNOWBALL_BRANDS = new Set(['enhance', 'crbn', 'friday']);
 
@@ -52,27 +57,35 @@ async function main() {
   });
   const rows = main.data.values || [];
   const sheetTotalsCents = {};
+  const sheetCounts = {};
   for (let i = 1; i < rows.length; i++) {
     const adv = rows[i][1];
     if (!adv) continue;
     sheetTotalsCents[adv] = (sheetTotalsCents[adv] || 0) + parseInt(rows[i][6] || '0', 10);
+    sheetCounts[adv] = (sheetCounts[adv] || 0) + 1;
   }
 
-  // 2. Platform truth for SocialSnowball brands — read Audit Aggregates tab
+  // 2. Platform truth — read Audit Aggregates tab. Each row carries a $ total
+  // (paid + outstanding) and/or a row count, depending on what the platform's
+  // scraper was able to capture. The audit compares each against the sheet.
   const comparisons = [];
   const aggResp = await sheets.spreadsheets.values
     .get({ spreadsheetId, range: 'Audit Aggregates!A:G' })
     .catch(() => ({ data: { values: [] } }));
   const aggRows = aggResp.data.values || [];
   for (let i = 1; i < aggRows.length; i++) {
-    const [advertiserId, platform, , , totalStr, , capturedAt] = aggRows[i];
-    if (!advertiserId || !totalStr) continue;
+    const [advertiserId, platform, , , totalStr, countStr, capturedAt] = aggRows[i];
+    if (!advertiserId) continue;
     const platformTotalUsd = parseFloat(totalStr);
-    if (!Number.isFinite(platformTotalUsd)) continue;
+    const platformCount = parseInt(countStr, 10);
+    const hasUsd = Number.isFinite(platformTotalUsd) && platformTotalUsd > 0;
+    const hasCount = Number.isFinite(platformCount) && platformCount > 0;
+    if (!hasUsd && !hasCount) continue;
     comparisons.push({
       advertiserId,
       platformLabel: platform || 'unknown',
-      platformTotalUsd,
+      platformTotalUsd: hasUsd ? platformTotalUsd : null,
+      platformCount: hasCount ? platformCount : null,
       capturedAt,
     });
   }
@@ -83,20 +96,49 @@ async function main() {
   const discrepancies = [];
   for (const c of comparisons) {
     const sheetUsd = (sheetTotalsCents[c.advertiserId] || 0) / 100;
-    const deltaUsd = sheetUsd - c.platformTotalUsd;
-    const absDelta = Math.abs(deltaUsd);
-    const pct = c.platformTotalUsd > 0 ? absDelta / c.platformTotalUsd : 0;
-    const tripped = absDelta > TOLERANCE_DOLLARS && pct > TOLERANCE_PERCENT;
-    const line = `${tripped ? '🚨' : '✓ '} ${c.advertiserId.padEnd(20)} platform $${c.platformTotalUsd.toFixed(2).padStart(11)}  sheet $${sheetUsd.toFixed(2).padStart(11)}  Δ ${deltaUsd >= 0 ? '+' : '-'}$${absDelta.toFixed(2)} (${(pct * 100).toFixed(1)}%)`;
-    console.log(line);
+    const sheetCount = sheetCounts[c.advertiserId] || 0;
+
+    let usdLine = '—';
+    let usdTripped = false;
+    let deltaUsd = 0;
+    let pctUsd = 0;
+    if (c.platformTotalUsd !== null) {
+      deltaUsd = sheetUsd - c.platformTotalUsd;
+      const absDelta = Math.abs(deltaUsd);
+      pctUsd = c.platformTotalUsd > 0 ? absDelta / c.platformTotalUsd : 0;
+      usdTripped = absDelta > TOLERANCE_DOLLARS && pctUsd > TOLERANCE_PERCENT;
+      usdLine = `platform $${c.platformTotalUsd.toFixed(2).padStart(11)}  sheet $${sheetUsd.toFixed(2).padStart(11)}  Δ ${deltaUsd >= 0 ? '+' : '-'}$${absDelta.toFixed(2)} (${(pctUsd * 100).toFixed(1)}%)`;
+    }
+
+    let countLine = '—';
+    let countTripped = false;
+    let deltaCount = 0;
+    let pctCount = 0;
+    if (c.platformCount !== null) {
+      deltaCount = sheetCount - c.platformCount;
+      const absDelta = Math.abs(deltaCount);
+      pctCount = c.platformCount > 0 ? absDelta / c.platformCount : 0;
+      countTripped = absDelta > TOLERANCE_ROWS && pctCount > TOLERANCE_ROW_PERCENT;
+      countLine = `platform ${String(c.platformCount).padStart(5)} rows  sheet ${String(sheetCount).padStart(5)} rows  Δ ${deltaCount >= 0 ? '+' : ''}${deltaCount} (${(pctCount * 100).toFixed(1)}%)`;
+    }
+
+    const tripped = usdTripped || countTripped;
+    const marker = tripped ? '🚨' : '✓ ';
+    console.log(`${marker} ${c.advertiserId.padEnd(20)}  $: ${usdLine}  |  rows: ${countLine}`);
     if (tripped) {
       discrepancies.push({
         advertiserId: c.advertiserId,
         platformLabel: c.platformLabel,
         platformTotalUsd: c.platformTotalUsd,
+        platformCount: c.platformCount,
         sheetTotalUsd: sheetUsd,
+        sheetCount,
         deltaUsd,
-        deltaPct: pct,
+        deltaCount,
+        deltaPctUsd: pctUsd,
+        deltaPctCount: pctCount,
+        usdTripped,
+        countTripped,
       });
     }
   }
@@ -117,14 +159,20 @@ async function main() {
   lines.push(`🚨 *Accuracy audit — ${discrepancies.length} ${noun} found*`);
   lines.push('');
   for (const d of discrepancies) {
-    const direction = d.deltaUsd >= 0 ? 'sheet is over-counting' : 'sheet is under-counting';
-    const sign = d.deltaUsd >= 0 ? '+' : '–';
     lines.push(`*${d.advertiserId}* (${d.platformLabel})`);
-    lines.push(`  Platform: $${d.platformTotalUsd.toFixed(2)}   Sheet: $${d.sheetTotalUsd.toFixed(2)}`);
-    lines.push(`  Off by ${sign}$${Math.abs(d.deltaUsd).toFixed(2)} (${(d.deltaPct * 100).toFixed(1)}%) — ${direction}`);
+    if (d.usdTripped) {
+      const sign = d.deltaUsd >= 0 ? '+' : '–';
+      const direction = d.deltaUsd >= 0 ? 'sheet is over-counting' : 'sheet is under-counting';
+      lines.push(`  $: platform $${d.platformTotalUsd.toFixed(2)}   sheet $${d.sheetTotalUsd.toFixed(2)}   off ${sign}$${Math.abs(d.deltaUsd).toFixed(2)} (${(d.deltaPctUsd * 100).toFixed(1)}%) — ${direction}`);
+    }
+    if (d.countTripped) {
+      const sign = d.deltaCount >= 0 ? '+' : '';
+      const direction = d.deltaCount >= 0 ? 'sheet has extra rows' : 'sheet is missing rows';
+      lines.push(`  rows: platform ${d.platformCount}   sheet ${d.sheetCount}   off ${sign}${d.deltaCount} (${(d.deltaPctCount * 100).toFixed(1)}%) — ${direction}`);
+    }
     lines.push('');
   }
-  lines.push(`_Threshold: alert when off by >$${TOLERANCE_DOLLARS} AND >${TOLERANCE_PERCENT * 100}%_`);
+  lines.push(`_Thresholds: $-check >$${TOLERANCE_DOLLARS} AND >${TOLERANCE_PERCENT * 100}%; row-check >${TOLERANCE_ROWS} AND >${TOLERANCE_ROW_PERCENT * 100}%_`);
   lines.push(`Sheet: https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`);
 
   const message = lines.join('\n');

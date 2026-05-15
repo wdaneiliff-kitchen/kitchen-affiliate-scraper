@@ -184,7 +184,9 @@ export async function scrapeCommissions({ email, password, headless = true, star
 
     // Fetch ALL pages of commission data via direct API calls
     console.log('\n📄 Fetching all pages of commission data...');
-    const allCommissions = await fetchAllCommissions(page, authToken);
+    const fetchResult = await fetchAllCommissions(page, authToken);
+    const allCommissions = fetchResult.records;
+    const platformTotalCount = fetchResult.platformTotal;
     if (allCommissions.length > 0) {
       commissions = allCommissions;
     }
@@ -204,7 +206,7 @@ export async function scrapeCommissions({ email, password, headless = true, star
 
     console.log(`✅ Scraped ${commissions.length} commission records`);
 
-    return commissions;
+    return { records: commissions, aggregate: { platformCount: platformTotalCount } };
 
   } catch (error) {
     console.error('❌ Scraping failed:', error.message);
@@ -225,6 +227,7 @@ async function fetchAllCommissions(page, authToken) {
   const allRecords = [];
   let currentPage = 1;
   let lastPage = 1;
+  let platformTotal = null; // platform-reported total record count for the audit
   const perPage = 100;
 
   // Use "all-time" date range: from Jan 1, 2020 to now
@@ -266,6 +269,7 @@ async function fetchAllCommissions(page, authToken) {
 
         lastPage = pageData.last_page || 1;
         const total = pageData.total || records.length;
+        if (Number.isFinite(pageData.total)) platformTotal = pageData.total;
 
         console.log(`   📄 Page ${currentPage}/${lastPage}: ${records.length} records (${allRecords.length}/${total} total)`);
 
@@ -280,8 +284,8 @@ async function fetchAllCommissions(page, authToken) {
     }
   } while (currentPage <= lastPage);
 
-  console.log(`   ✅ Fetched ${allRecords.length} total commission records`);
-  return allRecords;
+  console.log(`   ✅ Fetched ${allRecords.length} total commission records${platformTotal != null ? ` (platform reports ${platformTotal})` : ''}`);
+  return { records: allRecords, platformTotal };
 }
 
 /**

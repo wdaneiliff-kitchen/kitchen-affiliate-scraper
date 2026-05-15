@@ -522,6 +522,11 @@ export async function scrapeCommissions({
     if (allCommissions.length > 0) {
       commissions = allCommissions;
     }
+    // Forward platform-reported total (from "Showing N–M of TOTAL" pagination)
+    // so index.js can write it to Audit Aggregates for the nightly audit.
+    if (allCommissions._platformTotal != null) {
+      Object.defineProperty(commissions, '_platformTotal', { value: allCommissions._platformTotal, enumerable: false });
+    }
 
     // Fall back to DOM parsing if no API data
     if (commissions.length === 0) {
@@ -1037,6 +1042,10 @@ async function fetchAllCommissions(page, baseUrl, authToken, capturedResponses) 
     }
   }
 
+  // Attach platform-reported total to the array (read by index.js to populate
+  // the nightly accuracy audit). Using a non-enumerable property so it
+  // doesn't interfere with the array semantics every caller expects.
+  Object.defineProperty(allRecords, '_platformTotal', { value: expectedTotal, enumerable: false });
   return allRecords;
 }
 

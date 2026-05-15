@@ -10,6 +10,7 @@ dotenv.config({ path: resolve(__dirname, '../../../.env') });
 import { scrapeCommissions, debugPageStructure } from './scraper.js';
 import { createTransformer } from '@kitchen/shared/transformer';
 import { reconcileToSheets, validateAccess, getServiceAccountEmail, createSpreadsheet } from '@kitchen/shared/sheets';
+import { writeAuditAggregate } from '@kitchen/shared/audit-aggregates';
 import { writeFile, readFile, readdir } from 'fs/promises';
 import { FIELD_MAPPINGS, STATUS_MAPPINGS, getAccount, ACCOUNT_NAMES, DEFAULT_ACCOUNT, extractProductTitle } from './config.js';
 
@@ -153,6 +154,7 @@ async function processAccount(accountName, args) {
   }
 
   let records;
+  let platformTotalCount = null;
 
   if (!uploadOnly) {
     console.log(`📊 Scraping UpPromote commissions for ${account.advertiserName}...\n`);
@@ -169,6 +171,9 @@ async function processAccount(accountName, args) {
     });
 
     console.log(`\n📦 Raw records scraped: ${rawCommissions.length}`);
+    if (rawCommissions._platformTotal != null) {
+      platformTotalCount = rawCommissions._platformTotal;
+    }
 
     // Debug: show raw data structure
     if (rawCommissions.length > 0) {
@@ -257,6 +262,24 @@ async function processAccount(accountName, args) {
     advertiserId: account.advertiserId,
     sheetName: config.sheetName,
   });
+
+  // Persist the platform-reported total row count for the nightly accuracy
+  // audit. UpPromote shows this as "Showing N–M of TOTAL" on each brand's
+  // commissions page; the scraper captures it via getPaginationInfo and
+  // attaches it to the records array as a non-enumerable property.
+  if (Number.isFinite(platformTotalCount) && platformTotalCount > 0) {
+    try {
+      await writeAuditAggregate({
+        spreadsheetId: config.spreadsheetId,
+        credentialsPath: config.credentialsPath,
+        advertiserId: account.advertiserId,
+        platform: 'uppromote',
+        lifetimeConversionCount: platformTotalCount,
+      });
+    } catch (err) {
+      console.log(`⚠️ Failed to write audit aggregate for ${account.advertiserId}: ${err.message}`);
+    }
+  }
 
   console.log('\n═══════════════════════════════════════════════════════════');
   console.log('  ✅ Complete!');
