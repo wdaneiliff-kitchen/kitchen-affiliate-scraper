@@ -3,8 +3,6 @@ import {
   findSelector,
   launchBrowser,
   createStealthPage,
-  setupNetworkInterception,
-  getCookieString,
 } from '@kitchen/shared/scraper-base';
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { dirname, resolve } from 'path';
@@ -96,67 +94,6 @@ export async function scrapeCommissions({
   }
 
   const page = await createStealthPage(browser);
-
-  // Store intercepted API responses and auth token
-  const apiResponses = [];
-  const allJsonResponses = [];  // Log ALL JSON responses for diagnostics
-  let authToken = null;
-
-  // Set up network interception to capture commission data from API calls
-  await setupNetworkInterception(page, {
-    onApiResponse: ({ url, data }) => {
-      // Log ALL JSON responses for diagnostics
-      const urlPath = url.split('?')[0];
-      const preview = JSON.stringify(data).slice(0, 200);
-      console.log(`  📡 JSON: ${urlPath}`);
-      console.log(`     Preview: ${preview}...`);
-      allJsonResponses.push({ url, data, timestamp: Date.now() });
-
-      // Capture auth token from login response
-      if (data.token || data.access_token || data.accessToken) {
-        authToken = data.token || data.access_token || data.accessToken;
-        console.log(`  └─ 🔑 Captured auth token`);
-      }
-
-      // Extract records from various response structures
-      let records = null;
-
-      // UpPromote might use different response structures
-      if (data.data?.data && Array.isArray(data.data.data)) {
-        records = data.data.data;  // Nested: { data: { data: [...] } }
-      } else if (Array.isArray(data.data)) {
-        records = data.data;  // Direct: { data: [...] }
-      } else if (data.commissions && Array.isArray(data.commissions)) {
-        records = data.commissions;
-      } else if (data.referrals && Array.isArray(data.referrals)) {
-        records = data.referrals;
-      } else if (data.conversions && Array.isArray(data.conversions)) {
-        records = data.conversions;
-      } else if (Array.isArray(data)) {
-        records = data;
-      }
-
-      // Capture responses that look like commission/conversion data
-      const urlLower = url.toLowerCase();
-      const isCommissionEndpoint =
-        urlLower.includes('commission') ||
-        urlLower.includes('referral') ||
-        urlLower.includes('conversion') ||
-        urlLower.includes('order');
-
-      // Exclude non-data endpoints
-      const isExcluded =
-        urlLower.includes('notification') ||
-        urlLower.includes('login') ||
-        urlLower.includes('logout') ||
-        urlLower.includes('setting');
-
-      if (records && records.length > 0 && isCommissionEndpoint && !isExcluded) {
-        console.log(`  └─ 💾 CAPTURED: ${records.length} records from ${urlPath}`);
-        apiResponses.push({ url, data, records });
-      }
-    },
-  });
 
   try {
     // Try to load saved cookies first
@@ -349,43 +286,15 @@ export async function scrapeCommissions({
     await sleep(2000);
 
     // ── Diagnostic dump: log page structure ──────────────────────────────
+    // The data fetch happens via the DataTables AJAX endpoint (see
+    // fetchAllCommissionsFromApi), so this dump is purely for debugging when
+    // the page itself loads wrong (cookie expiry, layout change, redirect).
     try {
     console.log('\n══════════════════════════════════════════════════════════');
-    console.log('  🔍 DIAGNOSTIC: Page & Network Analysis');
+    console.log('  🔍 DIAGNOSTIC: Page Structure');
     console.log('══════════════════════════════════════════════════════════');
 
-    // 1. All JSON responses seen so far
-    console.log(`\n📡 Total JSON responses intercepted: ${allJsonResponses.length}`);
-    for (const { url, data } of allJsonResponses) {
-      try {
-        const shortUrl = url.split('?')[0].replace(/https?:\/\/[^/]+/, '');
-        const queryStr = url.includes('?') ? '?' + url.split('?')[1].slice(0, 80) : '';
-        const topKeys = typeof data === 'object' && data !== null ? Object.keys(data).join(', ') : typeof data;
-        let recordCount = '';
-        if (data?.data?.data && Array.isArray(data.data.data)) recordCount = ` (data.data.data: ${data.data.data.length} items)`;
-        else if (Array.isArray(data?.data)) recordCount = ` (data.data: ${data.data.length} items)`;
-        else if (Array.isArray(data)) recordCount = ` (array: ${data.length} items)`;
-        console.log(`   ${shortUrl}${queryStr}`);
-        console.log(`     Keys: [${topKeys}]${recordCount}`);
-
-        // Log pagination metadata if present
-        const meta = data?.data || data;
-        if (meta?.total || meta?.last_page || meta?.per_page) {
-          console.log(`     📄 Pagination: total=${meta.total}, per_page=${meta.per_page}, current_page=${meta.current_page}, last_page=${meta.last_page}`);
-        }
-
-        // Log first record structure if we find records
-        const records = data?.data?.data || (Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : null));
-        if (records && records.length > 0 && typeof records[0] === 'object') {
-          console.log(`     📋 First record keys: [${Object.keys(records[0]).join(', ')}]`);
-          console.log(`     📋 First record sample: ${JSON.stringify(records[0]).slice(0, 500)}`);
-        }
-      } catch (e) {
-        console.log(`   [error logging response: ${e.message}] url=${url?.slice(0, 100)}`);
-      }
-    }
-
-    // 2. DOM table structure
+    // DOM table structure
     const domDiag = await page.evaluate(() => {
       const result = { tables: [], pagination: null, bodyTextSnippet: '' };
 
@@ -442,46 +351,9 @@ export async function scrapeCommissions({
       console.log(`   Entries text: "${domDiag.entriesText}"`);
     }
 
-    // 3. Check for any XHR/fetch cookies or auth headers we can reuse
-    const cookies = await page.cookies();
-    const authCookies = cookies.filter(c =>
-      c.name.toLowerCase().includes('token') ||
-      c.name.toLowerCase().includes('session') ||
-      c.name.toLowerCase().includes('auth') ||
-      c.name.toLowerCase().includes('laravel')
-    );
-    console.log(`\n🍪 Relevant cookies: ${authCookies.map(c => `${c.name}=${c.value.slice(0, 20)}...`).join(', ') || 'none'}`);
-
-    // 4. Check localStorage for tokens
-    const storageTokens = await page.evaluate(() => {
-      const keys = Object.keys(localStorage);
-      const relevant = keys.filter(k =>
-        k.toLowerCase().includes('token') ||
-        k.toLowerCase().includes('auth') ||
-        k.toLowerCase().includes('session')
-      );
-      return relevant.map(k => ({ key: k, value: (localStorage.getItem(k) || '').slice(0, 40) }));
-    });
-    if (storageTokens.length > 0) {
-      console.log(`🔑 localStorage tokens: ${storageTokens.map(t => `${t.key}=${t.value}...`).join(', ')}`);
-    }
-
-    // Save full diagnostic to file
-    const diagData = {
-      url: page.url(),
-      allJsonResponses: allJsonResponses.map(r => ({
-        url: r.url,
-        dataKeys: Object.keys(r.data),
-        dataPreview: JSON.stringify(r.data).slice(0, 2000),
-      })),
-      domDiag,
-      authCookies: authCookies.map(c => ({ name: c.name, value: c.value.slice(0, 40) })),
-      storageTokens,
-      capturedCommissionResponses: apiResponses.length,
-      authToken: authToken ? `${authToken.slice(0, 20)}...` : null,
-    };
+    // Save the smaller page-state diagnostic
     const diagPath = `uppromote-diagnostic-${Date.now()}.json`;
-    await writeFile(diagPath, JSON.stringify(diagData, null, 2));
+    await writeFile(diagPath, JSON.stringify({ url: page.url(), domDiag }, null, 2));
     console.log(`\n💾 Full diagnostic saved to: ${diagPath}`);
     console.log('══════════════════════════════════════════════════════════\n');
     } catch (diagError) {
@@ -490,66 +362,16 @@ export async function scrapeCommissions({
     }
     // ── End diagnostic dump ──────────────────────────────────────────────
 
-    // Step 5: Apply date filters if provided
-    if (startDate || endDate) {
-      console.log(`📅 Applying date filter: ${startDate || 'start'} to ${endDate || 'end'}`);
-      await applyDateFilter(page, startDate, endDate);
-    }
+    // Fetch all commission records via UpPromote's DataTables AJAX endpoint.
+    // This bypasses the page's default 30-day date filter (which silently
+    // hid lifetime data when the scraper relied on DOM extraction).
+    const commissions = await fetchAllCommissionsFromApi(page, baseUrl, { startDate, endDate });
 
-    // Step 6: Extract data
-    let commissions = [];
-
-    console.log(`\n📊 API responses captured: ${apiResponses.length}`);
-
-    if (apiResponses.length > 0) {
-      console.log('✅ Using intercepted API data');
-      commissions = extractFromApiResponses(apiResponses);
-    }
-
-    // Get auth token from localStorage/cookies if not captured
-    if (!authToken) {
-      authToken = await page.evaluate(() => {
-        return localStorage.getItem('token') ||
-               localStorage.getItem('auth_token') ||
-               localStorage.getItem('access_token') ||
-               sessionStorage.getItem('token');
-      });
-    }
-
-    // Try to fetch all pages via direct API calls or DOM pagination
-    console.log('\n📄 Fetching all pages of commission data...');
-    const allCommissions = await fetchAllCommissions(page, baseUrl, authToken, apiResponses);
-    if (allCommissions.length > 0) {
-      commissions = allCommissions;
-    }
-    // Forward platform-reported total (from "Showing N–M of TOTAL" pagination)
-    // so index.js can write it to Audit Aggregates for the nightly audit.
-    if (allCommissions._platformTotal != null) {
-      Object.defineProperty(commissions, '_platformTotal', { value: allCommissions._platformTotal, enumerable: false });
-    }
-
-    // Fall back to DOM parsing if no API data
     if (commissions.length === 0) {
-      console.log('📄 Trying DOM parsing...');
-      commissions = await extractFromDOM(page);
-
-      if (commissions.length === 0) {
-        console.log('⚠️ No data found. Taking debug screenshot...');
-        await page.screenshot({ path: 'debug-uppromote-page.png', fullPage: true });
-        console.log(`   Current URL: ${page.url()}`);
-        console.log(`   Page title: ${await page.title()}`);
-
-        // Log page structure for debugging
-        const pageInfo = await page.evaluate(() => {
-          const tables = document.querySelectorAll('table');
-          return {
-            tableCount: tables.length,
-            bodyText: document.body.innerText.slice(0, 1000),
-          };
-        });
-        console.log(`   Tables found: ${pageInfo.tableCount}`);
-        console.log(`   Page text preview:\n${pageInfo.bodyText.slice(0, 500)}...`);
-      }
+      // Save a screenshot to help diagnose whether the page itself loaded wrong.
+      // A genuinely-zero brand also lands here — that's not an error.
+      await page.screenshot({ path: 'debug-uppromote-page.png', fullPage: true });
+      console.log(`   📸 Saved debug-uppromote-page.png (URL: ${page.url()})`);
     }
 
     // Update cookies after successful scrape (extends session)
@@ -891,311 +713,106 @@ async function safeClick(page, selector) {
   }, selector);
 }
 
-/**
- * Reads pagination info from the "Showing X to Y of Z entries" text on the page.
- * @returns {{ from: number, to: number, total: number } | null}
- */
-async function getPaginationInfo(page) {
-  return page.evaluate(() => {
-    const match = document.body.innerText.match(/showing\s+(\d+)\s+to\s+(\d+)\s+of\s+(\d+)/i);
-    if (match) {
-      return { from: parseInt(match[1]), to: parseInt(match[2]), total: parseInt(match[3]) };
-    }
-    return null;
-  });
+// ─── DataTables API fetch ─────────────────────────────────────────────────
+// UpPromote serves the commission table from a server-rendered Laravel page
+// that hydrates via a DataTables AJAX endpoint at /datatables/commission.
+// The page's date picker (jQuery daterangepicker) defaults to "last 30 days"
+// and rewrites the `from`/`to` Unix-timestamp query params before each fetch.
+//
+// We bypass the picker entirely and call the endpoint ourselves with
+// `from=0`, which UpPromote treats as "no lower bound" — i.e. all-time data.
+// This recovers historical commissions that have aged out of the default
+// 30-day window (and were being deleted from the sheet as ghosts).
+
+const COLUMN_NAMES = [
+  'created_at', 'id', 'order_number', 'full_name', 'shipping_address',
+  'total', 'quantity', 'commission', 'status', 'sca_source', 'id', 'affiliate_coupon',
+];
+const API_PAGE_SIZE = 100;
+
+function buildDatatablesUrl(baseUrl, { start, length, from, to }) {
+  // DataTables requires column metadata for each visible column. UpPromote's
+  // backend only reads a handful of these (start/length/from/to/status), but
+  // the request is rejected if columns[] isn't sent — so we send minimal stubs.
+  const params = new URLSearchParams();
+  params.set('draw', '1');
+  for (let i = 0; i < COLUMN_NAMES.length; i++) {
+    params.set(`columns[${i}][data]`, COLUMN_NAMES[i]);
+    params.set(`columns[${i}][name]`, '');
+    params.set(`columns[${i}][searchable]`, 'true');
+    params.set(`columns[${i}][orderable]`, 'true');
+    params.set(`columns[${i}][search][value]`, '');
+    params.set(`columns[${i}][search][regex]`, 'false');
+  }
+  params.set('order[0][column]', '0');
+  params.set('order[0][dir]', 'desc');
+  params.set('start', String(start));
+  params.set('length', String(length));
+  params.set('search[value]', '');
+  params.set('search[regex]', 'false');
+  params.set('sca_source', '');
+  params.set('status', '-1'); // -1 = all statuses (pending + approved + paid + denied)
+  params.set('from', String(from));
+  params.set('to', String(to));
+  params.set('_', String(Date.now()));
+  return `${baseUrl}/datatables/commission?${params.toString()}`;
 }
 
 /**
- * Builds a fingerprint for a DOM table row to detect duplicates across pages.
- * Uses order_number + referral_id as unique key.
+ * Fetches ALL commission records for the brand from UpPromote's DataTables
+ * endpoint, paginated. Runs inside the page context so the session cookies
+ * (laravel_session, XSRF-TOKEN) authenticate the request automatically.
+ *
+ * @param {import('puppeteer').Page} page - logged-in page on /{accountId}/commission
+ * @param {string} baseUrl - account base URL (e.g. https://af.uppromote.com/Udrippin)
+ * @param {{ startDate?: string, endDate?: string }} [opts]
+ *   `startDate`/`endDate` are optional YYYY-MM-DD strings. Defaults to
+ *   from=0 (epoch, i.e. all-time) and to=now.
+ * @returns {Promise<Array>} Records in raw API shape. The platform's
+ *   `recordsTotal` is attached as a non-enumerable `_platformTotal` for the
+ *   nightly accuracy audit.
  */
-function recordKey(record) {
-  return `${record.order_number || ''}|${record.referral_id || ''}|${record.created_at || ''}`;
-}
+async function fetchAllCommissionsFromApi(page, baseUrl, { startDate, endDate } = {}) {
+  const fromUnix = startDate
+    ? Math.floor(Date.parse(`${startDate}T00:00:00Z`) / 1000)
+    : 0;
+  const toUnix = endDate
+    ? Math.floor(Date.parse(`${endDate}T23:59:59Z`) / 1000)
+    : Math.floor(Date.now() / 1000);
 
-/**
- * Fetches all commission records by paginating through pages.
- * Uses the "Showing X to Y of Z" text and duplicate detection to stop correctly.
- */
-async function fetchAllCommissions(page, baseUrl, authToken, capturedResponses) {
-  const allRecords = [];
-  const seenKeys = new Set();
+  console.log(`📄 Fetching commissions via DataTables API (from=${fromUnix}, to=${toUnix})...`);
 
-  /** Adds records, deduplicating by key. Returns count of new records added. */
-  const addRecords = (records) => {
-    let added = 0;
-    for (const rec of records) {
-      const key = recordKey(rec);
-      if (!seenKeys.has(key)) {
-        seenKeys.add(key);
-        allRecords.push(rec);
-        added++;
-      }
-    }
-    return added;
-  };
+  const all = [];
+  let totalRecords = null;
+  let start = 0;
 
-  // First, extract from any captured API responses
-  if (capturedResponses.length > 0) {
-    for (const { records } of capturedResponses) {
-      if (records && Array.isArray(records)) {
-        addRecords(records);
-      }
-    }
-    if (allRecords.length > 0) {
-      console.log(`   📥 Extracted ${allRecords.length} records from API responses`);
-    }
-  }
-
-  // Read pagination info to know total
-  const paginationInfo = await getPaginationInfo(page);
-  const expectedTotal = paginationInfo?.total || null;
-  if (paginationInfo) {
-    console.log(`   📄 Pagination: showing ${paginationInfo.from}-${paginationInfo.to} of ${paginationInfo.total}`);
-  }
-
-  // DOM-based pagination
-  let currentPage = 1;
-  const maxPages = 50;
-
-  // Extract page 1 from DOM if we don't have API data
-  if (allRecords.length === 0) {
-    const pageRecords = await extractFromDOM(page);
-    const added = addRecords(pageRecords);
-    console.log(`   📄 Page ${currentPage}: ${added} new records (${allRecords.length} total)`);
-  }
-
-  // Check if we already have all records
-  if (expectedTotal && allRecords.length >= expectedTotal) {
-    console.log(`   ✅ Already have all ${expectedTotal} records`);
-    return allRecords;
-  }
-
-  // Click through pages
-  while (currentPage < maxPages) {
-    // Check if there is a next page to go to
-    const nextPageNum = currentPage + 1;
-    const canGoNext = await page.evaluate((targetPage) => {
-      // Look for a specific page number link/button first (most reliable)
-      const allClickable = document.querySelectorAll('button, a, [role="button"], .pagination li');
-      for (const el of allClickable) {
-        const text = el.textContent.trim();
-        if (text === String(targetPage)) {
-          // Check it's not the currently active page
-          const isActive = el.classList.contains('active') ||
-                           el.closest('li')?.classList.contains('active') ||
-                           el.getAttribute('aria-current') === 'page';
-          if (!isActive) {
-            el.click();
-            return 'clicked_page';
-          }
-        }
-      }
-
-      // Fall back to "Next" button
-      for (const el of allClickable) {
-        const text = el.textContent.trim().toLowerCase();
-        if (text === 'next' || text === '›' || text === '»') {
-          // Check if it's truly disabled (various ways sites disable)
-          const isDisabled = el.disabled ||
-                             el.classList.contains('disabled') ||
-                             el.closest('li')?.classList.contains('disabled') ||
-                             el.getAttribute('aria-disabled') === 'true' ||
-                             el.style.pointerEvents === 'none' ||
-                             el.style.opacity === '0.5' ||
-                             el.tabIndex === -1;
-          if (!isDisabled) {
-            el.click();
-            return 'clicked_next';
-          }
-        }
-      }
-
-      return null;
-    }, nextPageNum);
-
-    if (!canGoNext) {
-      console.log(`   ✅ No more pages (stopped at page ${currentPage})`);
-      break;
-    }
-
-    await sleep(3000);
-    currentPage = nextPageNum;
-
-    // Verify pagination actually changed
-    const newPagInfo = await getPaginationInfo(page);
-
-    const pageRecords = await extractFromDOM(page);
-    const added = addRecords(pageRecords);
-
-    if (added === 0) {
-      console.log(`   ✅ Page ${currentPage}: 0 new records (all duplicates) — stopping`);
-      break;
-    }
-
-    console.log(`   📄 Page ${currentPage}: ${added} new records (${allRecords.length} total)${newPagInfo ? ` [showing ${newPagInfo.from}-${newPagInfo.to} of ${newPagInfo.total}]` : ''}`);
-
-    // Stop if we've reached the expected total
-    if (expectedTotal && allRecords.length >= expectedTotal) {
-      console.log(`   ✅ Reached expected total of ${expectedTotal} records`);
-      break;
-    }
-  }
-
-  // Attach platform-reported total to the array (read by index.js to populate
-  // the nightly accuracy audit). Using a non-enumerable property so it
-  // doesn't interfere with the array semantics every caller expects.
-  Object.defineProperty(allRecords, '_platformTotal', { value: expectedTotal, enumerable: false });
-  return allRecords;
-}
-
-/**
- * Applies date filter on the commissions page
- */
-async function applyDateFilter(page, startDate, endDate) {
-  try {
-    const dateFilterClicked = await page.evaluate(() => {
-      const buttons = document.querySelectorAll('button, [role="button"], .date-filter, [class*="date"]');
-      for (const btn of buttons) {
-        if (btn.textContent.toLowerCase().includes('date') ||
-            btn.querySelector('svg[class*="calendar"]')) {
-          btn.click();
-          return true;
-        }
-      }
-      return false;
-    });
-
-    if (dateFilterClicked) {
-      await sleep(1000);
-    }
-
-    const dateInputs = await page.$$('input[type="date"], input[type="text"][placeholder*="date" i]');
-    if (dateInputs.length >= 2) {
-      if (startDate) {
-        await dateInputs[0].click({ clickCount: 3 });
-        await dateInputs[0].type(startDate);
-      }
-      if (endDate) {
-        await dateInputs[1].click({ clickCount: 3 });
-        await dateInputs[1].type(endDate);
-      }
-
-      const applyButton = await findSelector(page, [
-        'button:has-text("Apply")',
-        'button:has-text("Filter")',
-        'button:has-text("Search")',
-      ]);
-
-      if (applyButton) {
-        await page.click(applyButton);
-        await sleep(2000);
-      }
-    }
-  } catch (e) {
-    console.warn('⚠️ Could not apply date filter:', e.message);
-  }
-}
-
-/**
- * Extracts commission data from intercepted API responses
- */
-function extractFromApiResponses(apiResponses) {
-  const commissions = [];
-
-  for (const { records } of apiResponses) {
-    if (records && Array.isArray(records)) {
-      commissions.push(...records);
-    }
-  }
-
-  return commissions;
-}
-
-/**
- * Extracts commission data by parsing the DOM table
- */
-async function extractFromDOM(page) {
-  return await page.evaluate(() => {
-    const commissions = [];
-    const table = document.querySelector('table, .data-table, [role="table"]');
-
-    if (!table) {
-      return commissions;
-    }
-
-    const headerRow = table.querySelector('thead tr, tr:first-child');
-    const headers = [];
-    if (headerRow) {
-      headerRow.querySelectorAll('th, td').forEach(cell => {
-        let header = cell.textContent.trim().toLowerCase()
-          .replace(/\s+/g, '_')
-          .replace(/[^a-z0-9_]/g, '');
-        headers.push(header);
+  while (true) {
+    const url = buildDatatablesUrl(baseUrl, { start, length: API_PAGE_SIZE, from: fromUnix, to: toUnix });
+    const response = await page.evaluate(async (u) => {
+      const r = await fetch(u, {
+        credentials: 'include',
+        headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
       });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    }, url);
+
+    const records = response.data || [];
+    if (totalRecords === null) {
+      totalRecords = Number.isFinite(response.recordsTotal) ? response.recordsTotal : 0;
+      console.log(`   📊 Platform reports ${totalRecords} total records`);
     }
+    all.push(...records);
+    console.log(`   📄 Page ${Math.floor(start / API_PAGE_SIZE) + 1}: fetched ${records.length} (running total ${all.length}/${totalRecords})`);
 
-    const headerMap = {
-      'create_at': 'created_at',
-      'createat': 'created_at',
-      'referral_id': 'referral_id',
-      'referralid': 'referral_id',
-      'order_number': 'order_number',
-      'ordernumber': 'order_number',
-      'customer_address': 'customer_address',
-      'customeraddress': 'customer_address',
-      'total_sales': 'total_sales',
-      'totalsales': 'total_sales',
-      'quantity': 'quantity',
-      'commission': 'commission',
-      'status': 'status',
-      'source': 'source',
-      'action': 'action',
-    };
+    // Stop on either: caught up to platform-reported total, or got a short page.
+    if (records.length < API_PAGE_SIZE) break;
+    if (all.length >= totalRecords) break;
+    start += API_PAGE_SIZE;
+  }
 
-    const rows = table.querySelectorAll('tbody tr');
-
-    rows.forEach(row => {
-      const cells = row.querySelectorAll('td');
-      if (cells.length === 0) return;
-
-      const record = {};
-      cells.forEach((cell, index) => {
-        const rawHeader = headers[index] || `column_${index}`;
-        const header = headerMap[rawHeader] || rawHeader;
-        let value = cell.textContent.trim();
-
-        if (header === 'referral_id' || rawHeader.includes('referral')) {
-          const link = cell.querySelector('a');
-          if (link) {
-            const match = link.href?.match(/order-detail\/(\d+)/);
-            if (match) value = match[1];
-          }
-          const dataId = cell.getAttribute('data-id') || cell.querySelector('[data-id]')?.getAttribute('data-id');
-          if (dataId) value = dataId;
-        }
-
-        if (header === 'total_sales' || header === 'commission') {
-          value = value.replace(/[^0-9.-]/g, '');
-        }
-
-        if (header === 'created_at') {
-          const dateSpan = cell.querySelector('[class*="date"], small, span');
-          if (dateSpan) {
-            record.created_at_display = dateSpan.textContent.trim();
-          }
-        }
-
-        record[header] = value;
-      });
-
-      if (record.referral_id || record.order_number) {
-        commissions.push(record);
-      }
-    });
-
-    return commissions;
-  });
+  Object.defineProperty(all, '_platformTotal', { value: totalRecords ?? 0, enumerable: false });
+  return all;
 }
 
 /**

@@ -198,18 +198,29 @@ export const ACCOUNT_NAMES = ['luzz', 'honolulu', 'holbrook', 'diadem', 'pickleb
 // Default account
 export const DEFAULT_ACCOUNT = 'luzz';
 
-// UpPromote status mappings
-// String-based statuses (standard transformer handles most)
+// UpPromote numeric status code → canonical status. Verified 2026-05-17 by
+// matching API records against existing sheet rows (368 rows across honolulu
+// + luzz, 100% match). Values:
+//   0 → "Pending" badge in UI (commission earned, not yet approved)
+//   1 → "Approved" badge (approved, awaiting payout)
+//   2 → "Paid" badge (payout sent — canonically "approved" per shared mapper)
+// If UpPromote ever returns a new code, the shared transformer warns and
+// defaults to "pending"; add it here when seen.
 export const STATUS_MAPPINGS = {
-  // Add any numeric status codes here if UpPromote uses them
+  0: 'pending',
+  1: 'approved',
+  2: 'approved',
 };
 
 // Common field name mappings from UpPromote to target schema
 export const FIELD_MAPPINGS = {
-  // Transaction ID - UpPromote uses referral_id
-  transaction_id: ['referral_id', 'id', 'conversion_id'],
+  // Transaction ID - the datatables/commission API returns `id` (referrals.id)
+  // as the stable per-commission identifier. `referral_id` kept as fallback so
+  // any cached JSON dumps from the legacy DOM extractor (which renamed `id` →
+  // `referral_id`) still produce matching transaction_ids on re-upload.
+  transaction_id: ['id', 'referral_id', 'conversion_id'],
 
-  // Date fields
+  // Date fields - datatables API returns Unix timestamps; formatDateCentral handles them
   order_date: ['created_at', 'conversion_date', 'order_date', 'date'],
   click_date: ['click_date', 'clicked_at'],
   validation_date: ['approved_at', 'validated_at', 'paid_at'],
@@ -218,8 +229,9 @@ export const FIELD_MAPPINGS = {
   // Currency
   currency_id: ['currency', 'currency_code', 'currency_id'],
 
-  // Amounts - UpPromote: 'total_sales' is order amount, 'commission' is earnings
-  sale_amount: ['total_sales', 'sale_amount', 'order_total', 'subtotal', 'amount'],
+  // Amounts - API: `total` is order amount, `commission` is earnings.
+  // `total_sales` was the legacy DOM-scraped name; kept for backwards-compat.
+  sale_amount: ['total', 'total_sales', 'sale_amount', 'order_total', 'subtotal', 'amount'],
   commission_amount: ['commission', 'commission_amount', 'earnings', 'payout'],
 
   // Status

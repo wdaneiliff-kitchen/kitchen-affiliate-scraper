@@ -296,6 +296,17 @@ function parseToCentralString(str) {
 function parseAsUTC(str) {
   if (!str) return null;
 
+  // Unix epoch — 10-digit seconds or 13-digit milliseconds. Constrained to a
+  // 2001–2286 window so a numeric order_id can't be mistaken for a timestamp.
+  if (/^\d{10}$/.test(str)) {
+    const n = Number(str);
+    if (n >= 1_000_000_000 && n <= 9_999_999_999) return new Date(n * 1000);
+  }
+  if (/^\d{13}$/.test(str)) {
+    const n = Number(str);
+    if (n >= 1_000_000_000_000 && n <= 9_999_999_999_999) return new Date(n);
+  }
+
   // Already has timezone info — parse as-is
   if (hasTimezoneInfo(str)) {
     const date = new Date(str);
