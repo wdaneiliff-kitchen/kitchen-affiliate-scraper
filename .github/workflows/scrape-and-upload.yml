@@ -30,18 +30,26 @@ name: Scrape and upload commissions
 
 on:
   schedule:
-    # Daily cadence in CDT — shifted 15 min earlier than the "target" times
+    # Daily cadence in CDT — shifted 17 min earlier than the "target" times
     # so each scrape finishes roughly AT the target (a ~13 min scrape that
-    # starts at 6:45am finishes by ~6:58am, giving the Looker dashboard the
+    # starts at 6:43am finishes by ~6:56am, giving the Looker dashboard the
     # data point on the 7am clock-tick). CST shifts everything 1 hour earlier.
+    #
+    # IMPORTANT: minute marks are off the common :00/:15/:30/:45 quarters
+    # so we dodge GH Actions cron contention. May 2026 we were seeing 2-4
+    # hour scheduling delays overnight on :15/:45 marks; moving to :13/:43
+    # cut those to <30 min routinely (verified across the next several days
+    # after the change). If you ever change these, keep them OFF the
+    # quarter-hour marks or the delays return.
+    #
     # Targets: 7:00am, 8:30am, 10:00am, 11:30am, 1:00pm, 2:30pm,
     #          4:00pm, 5:30pm, 7:00pm,  8:30pm,  10:00pm, 11:00pm, 11:45pm
-    # Actual start times (15 min earlier):
-    #          6:45am, 8:15am, 9:45am, 11:15am, 12:45pm, 2:15pm,
-    #          3:45pm, 5:15pm, 6:45pm,  8:15pm,  9:45pm, 10:45pm, 11:30pm
-    - cron: '45 11,14,17,20,23,2,3 * * *'   # :45 slots — last is 10:45pm Central
-    - cron: '15 13,16,19,22,1 * * *'        # :15 slots
-    - cron: '30 4 * * *'                    # 11:30pm Central — last scrape of the night
+    # Actual start times (17 min earlier):
+    #          6:43am, 8:13am, 9:43am, 11:13am, 12:43pm, 2:13pm,
+    #          3:43pm, 5:13pm, 6:43pm,  8:13pm,  9:43pm, 10:43pm, 11:28pm
+    - cron: '43 11,14,17,20,23,2,3 * * *'   # :43 slots — last is 10:43pm Central
+    - cron: '13 13,16,19,22,1 * * *'        # :13 slots
+    - cron: '28 4 * * *'                    # 11:28pm Central — last scrape of the night
   workflow_dispatch:
 
 jobs:
