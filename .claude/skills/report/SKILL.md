@@ -1,9 +1,9 @@
 ---
-name: status
+name: report
 description: Health check for the kitchen-affiliate-scraper. Looks at recent workflow runs, drift/accuracy audits, audit-aggregate freshness, cookie expiry, and sheet state. Outputs a single green/yellow/red summary. Use when Dane asks "is everything running smoothly?", "is the scraper ok?", "status check", "did the scrape work?", or similar.
 ---
 
-# Status — scraper health check
+# Report — scraper health check
 
 A one-shot diagnostic. Read these checks in parallel, then synthesize a short report.
 
