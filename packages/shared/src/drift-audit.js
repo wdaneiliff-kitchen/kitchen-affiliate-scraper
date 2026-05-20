@@ -24,6 +24,7 @@
 import { google } from 'googleapis';
 import { readFile } from 'fs/promises';
 import https from 'node:https';
+import { ensureGridRoom } from './sheets.js';
 
 const SHEET_NAME = 'Comissions';
 const AUDIT_TAB = 'Drift Audit';
@@ -116,6 +117,7 @@ async function main() {
     const newRows = Object.entries(snapshot).map(([id, s]) =>
       [today, id, String(s.rows), String(s.sale), String(s.comm)]
     );
+    await ensureGridRoom(sheets, spreadsheetId, AUDIT_TAB, newRows.length);
     await sheets.spreadsheets.values.append({
       spreadsheetId, range: `${AUDIT_TAB}!A:E`, valueInputOption: 'RAW',
       requestBody: { values: newRows },

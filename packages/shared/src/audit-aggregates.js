@@ -6,6 +6,7 @@
 // SocialSnowball Paid-tab incident).
 import { google } from 'googleapis';
 import { readFile } from 'fs/promises';
+import { ensureGridRoom } from './sheets.js';
 
 const AGGREGATES_TAB = 'Audit Aggregates';
 const HEADERS = [
@@ -118,6 +119,7 @@ export async function writeAuditAggregate({
     });
     console.log(`📊 Audit aggregate updated: ${advertiserId} → paid $${paid.toFixed(2)} + outstanding $${outstanding.toFixed(2)} = $${total.toFixed(2)}`);
   } else {
+    await ensureGridRoom(sheets, spreadsheetId, AGGREGATES_TAB, 1);
     await sheets.spreadsheets.values.append({
       spreadsheetId,
       range: `${AGGREGATES_TAB}!A1`,

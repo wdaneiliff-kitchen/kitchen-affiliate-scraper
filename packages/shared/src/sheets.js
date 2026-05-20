@@ -25,6 +25,56 @@ async function getAuthenticatedClient(credentialsPath) {
 }
 
 /**
+ * Ensures the given tab has enough rows in its grid to accept N more data rows.
+ * Google Sheets tabs have a fixed grid `rowCount` separate from data; once data
+ * fills the grid, any further `values.append` fails with "Range ... exceeds grid
+ * limits." This guard reads the tab's metadata + the current populated row count,
+ * and calls `appendDimension` to grow the grid if `freeRows < neededRows + buffer`.
+ *
+ * The expansion adds empty rows at the bottom — non-destructive, idempotent
+ * (safe to call concurrently from multiple scrapes), and invisible to Looker
+ * (which filters by order_date so trailing empties don't appear).
+ *
+ * Why this exists: on 2026-05-20 the Comissions tab hit its 2261-row grid
+ * cap and started rejecting every scrape's inserts (`Range (Comissions!A2262)
+ * exceeds grid limits`). 5 scheduled scrapes failed before manual expansion.
+ * Calling this before every write at the scraper layer prevents recurrence.
+ *
+ * @param {Object} sheets - Authenticated sheets client
+ * @param {string} spreadsheetId
+ * @param {string} sheetName
+ * @param {number} neededRows - How many new rows you're about to write
+ * @param {number} [buffer=1000] - Extra slack to add when growing
+ */
+export async function ensureGridRoom(sheets, spreadsheetId, sheetName, neededRows, buffer = 1000) {
+  if (neededRows <= 0) return;
+  const [meta, dataA] = await Promise.all([
+    sheets.spreadsheets.get({ spreadsheetId }),
+    sheets.spreadsheets.values.get({ spreadsheetId, range: `${sheetName}!A:A` }),
+  ]);
+  const tab = meta.data.sheets.find(s => s.properties.title === sheetName);
+  if (!tab) return; // tab will be created elsewhere with default size
+  const gridRows = tab.properties.gridProperties.rowCount;
+  const usedRows = (dataA.data.values || []).length; // includes header
+  const freeRows = gridRows - usedRows;
+  if (freeRows >= neededRows) return;
+  const growBy = Math.max(neededRows - freeRows + buffer, 1000);
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [{
+        appendDimension: {
+          sheetId: tab.properties.sheetId,
+          dimension: 'ROWS',
+          length: growBy,
+        },
+      }],
+    },
+  });
+  console.log(`   📐 Grew "${sheetName}" tab by ${growBy} rows (was ${gridRows}, ${usedRows} used, needed ${neededRows} more)`);
+}
+
+/**
  * Uploads commission data to Google Sheets
  *
  * @param {Object} options - Upload options
@@ -136,6 +186,10 @@ export async function uploadToSheets({
     const appendRange = (!hasHeaders || clearFirst)
       ? `${sheetName}!A1`
       : `${sheetName}!A${existingRows.length + 1}`;
+
+    // Grow the grid first if needed — prevents the "Range exceeds grid limits"
+    // error that brought down multiple scrapes on 2026-05-20.
+    await ensureGridRoom(sheets, spreadsheetId, sheetName, valuesToUpload.length);
 
     // Upload data
     const result = await sheets.spreadsheets.values.update({
@@ -357,6 +411,8 @@ export async function reconcileToSheets({
   if (toInsert.length > 0) {
     const headerCols = getHeaders();
     const values = toInsert.map(rec => headerCols.map(h => String(rec[h] ?? '')));
+    // Grow the grid first if needed (see ensureGridRoom comment for context).
+    await ensureGridRoom(sheets, spreadsheetId, sheetName, toInsert.length);
     await sheets.spreadsheets.values.append({
       spreadsheetId,
       range: `${sheetName}!A:V`,

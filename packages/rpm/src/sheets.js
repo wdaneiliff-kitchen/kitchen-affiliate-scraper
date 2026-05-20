@@ -1,6 +1,7 @@
 import { google } from 'googleapis';
 import { readFile } from 'fs/promises';
 import { createHash } from 'node:crypto';
+import { ensureGridRoom } from '@kitchen/shared/sheets';
 
 const ADVERTISER_ID = 'rpm-pickleball';
 const ADVERTISER_NAME = 'RPM Pickleball';
@@ -80,6 +81,7 @@ export async function appendDeltaRow({
 
   // Append to RPM Commissions tracking tab
   const nextTrackingRow = trackingRows.length + 1;
+  await ensureGridRoom(sheets, spreadsheetId, trackingSheetName, 1);
   await sheets.spreadsheets.values.update({
     spreadsheetId,
     range: `${trackingSheetName}!A${nextTrackingRow}`,
@@ -128,6 +130,7 @@ export async function appendDeltaRow({
 
     if (!existingIds.has(transactionId)) {
       const nextMainRow = mainRows.length + 1;
+      await ensureGridRoom(sheets, spreadsheetId, mainSheetName, 1);
       await sheets.spreadsheets.values.update({
         spreadsheetId,
         range: `${mainSheetName}!A${nextMainRow}`,
