@@ -58,10 +58,10 @@ Each package follows the same pattern: **scrape → transform → upload to Goog
 | Command | Platform | Brands |
 |---|---|---|
 | `pnpm bixgrow` | BixGrow | Joola |
-| `pnpm socialsnowball:all` | SocialSnowball | Enhance, CRBN, Friday |
+| `pnpm socialsnowball:all` | SocialSnowball | Enhance, CRBN, Friday, Engage |
 | `pnpm shortly` | Shortly | Paddletek |
 | `pnpm uppromote:all` | UpPromote | Luzz, Honolulu, Holbrook, Diadem, Pickleball Apes, UDrippin, 11six24, Vatic, Gruvn, Six Zero, Neonic, Chorus, Thrive, Mark, Gherkin, Proton, Aireo |
-| `pnpm affiliatly` | Affiliatly | Engage |
+| `pnpm affiliatly` | Affiliatly | _(historical — Engage moved to SocialSnowball 2026-05-14)_ |
 | `pnpm goaffpro` | GoAffPro | Forwrd |
 | `pnpm rpm` | Shopify Collabs | RPM Pickleball |
 | `pnpm refersion` | Refersion | Gearbox, ERNE, Volair |
@@ -215,7 +215,8 @@ As of 2026-05-18:
 - SocialSnowball lifetime totals match Social Snowball's platform within normal-activity drift (Friday, Enhance, CRBN all verified).
 - SocialSnowball per-period totals are now accurate (post-drill-down) — each paid order has its own row with its real date instead of a chunky batch row stamped on the payout date. Verify with: filter Looker to any date range, then compare against SS Analytics → Friday/Enhance/CRBN → same range. Should match.
 - RPM lifetime is correct; per-day distribution for May 9–11 is approximated due to the May 11 backfill (see backfill gotcha).
-- Brands sitting at $0 across all windows that may deserve a check: Affiliatly/Engage, GoAffPro/Forwrd, Refersion/Gearbox + Volair. Cross-reference each against its platform before assuming a scraper bug.
+- Brands sitting at $0 across all windows that may deserve a check: GoAffPro/Forwrd, Refersion/Gearbox + Volair. Cross-reference each against its platform before assuming a scraper bug.
+- **Engage migrated from Affiliatly to SocialSnowball on 2026-05-14.** The old Affiliatly scraper hasn't captured an Engage sale since 2026-03-19 because Engage left the platform; SocialSnowball took over with a separate admin login (`admin@thekitchenpickle.com`, not the shared `alex@…` used by enhance/crbn/friday). The 19 historical Affiliatly engage rows on the Comissions tab were retroactively renamed to `advertiser_id='engage-legacy'` on 2026-05-21 so SocialSnowball-engage reconcile wouldn't delete them as ghosts. New SS rows write under `advertiser_id='engage'`. **If anyone needs Engage's all-time number**, sum both ids — there's a Mar 19 → May 14 gap where no scraper covered Engage at all, and the brand's lifetime totals are split across two ids by design.
 - **UpPromote brands confirmed quiet (no real sales, not a scraper bug):** pickleballapes, udrippin, gruvn, neonic, chorus, thrive, mark, gherkin. The scraper runs fine for them; UpPromote itself reports "Showing 0 to 0 of 0" on each one's commission page (verified 2026-05-15 in scrape `25926210286`). Don't re-investigate unless a sale lands and the scrape still returns 0. The accuracy audit will silently skip them — no aggregate row is written when `platformTotalCount === 0`. Note: udrippin has 9 historical rows on the sheet that the reconcile safety guard correctly preserves (sheet > 0, source = 0 → refuses to delete).
 
 **Pending uncommitted state on `main`** (per `git status` at session start, may shift): cookie file refreshes for several UpPromote brands, RPM/refersion dashboard/error screenshots, and `packages/shared/src/fix-proton-dates.js` one-off helper. Ask Dane before committing — some are local-only.

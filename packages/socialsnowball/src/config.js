@@ -36,11 +36,31 @@ export function getAccount(name) {
       advertiserId: 'friday',
       advertiserName: 'Friday',
     },
+    engage: {
+      // Engage migrated from Affiliatly to SocialSnowball on 2026-05-14 (SS
+      // signed_up_at timestamp; last Affiliatly sale was 2026-03-19, so
+      // there's a ~2-month gap where no scraper captured Engage activity).
+      //
+      // Login is a SEPARATE admin account (admin@thekitchenpickle.com), not
+      // the shared SS login used by enhance/crbn/friday (alex@…), so this
+      // brand uses its own env vars.
+      //
+      // The 19 historical Affiliatly engage rows in the Comissions tab were
+      // renamed to advertiser_id='engage-legacy' on 2026-05-21 so the new
+      // SocialSnowball reconcile doesn't delete them as ghosts. New SS engage
+      // rows write under advertiser_id='engage'. Lifetime totals require
+      // summing both ids if you ever need Engage's all-time number.
+      email: process.env.SOCIALSNOWBALL_ENGAGE_EMAIL || defaultEmail,
+      password: process.env.SOCIALSNOWBALL_ENGAGE_PASSWORD || defaultPassword,
+      merchantName: 'Engage Pickleball',
+      advertiserId: 'engage',
+      advertiserName: 'Engage',
+    },
   };
   return accounts[name];
 }
 
-export const ACCOUNT_NAMES = ['enhance', 'crbn', 'friday'];
+export const ACCOUNT_NAMES = ['enhance', 'crbn', 'friday', 'engage'];
 
 // Default account (for backwards compatibility)
 export const DEFAULT_ACCOUNT = 'enhance';
