@@ -105,6 +105,20 @@ for (let i = 1; i < rows.length; i++) {
 
 Useful for one-line context: total rows, today's row count, oldest "latest per brand" timestamp (if any brand's latest sale is > 24h old, that's worth flagging).
 
+### 8. Brands going quiet (informational, not an alert)
+
+Surface brands whose latest sale is >36 hours old, EXCLUDING brands already known to be long-quiet (`pickleballapes`, `udrippin`, `gruvn`, `neonic`, `chorus`, `thrive`, `mark`, `gherkin`, `volair`, `gearbox`, `erne`, `engage` — see CLAUDE.md "$0 brands" section). Sort by staleness (most-recent first).
+
+This isn't a 🚨 or ⚠️ — it's an informational nudge so Dane can cross-check on the platform side whether a normally-active brand has had a real lull or whether something subtle broke. Format as a short list at the bottom of the report, e.g.:
+
+```
+Going quiet:
+  joola — last sale 5/19 23:49 (1.5 days)
+  paddletek — last sale 5/17 19:00 (3.5 days)
+```
+
+Dane explicitly called this out as valuable (2026-05-21): "i like how you mentioned the slower brands. that's smart." Keep it terse, do not raise severity for it, and don't include the known-quiet brands.
+
 ## Output template
 
 ```
@@ -119,6 +133,10 @@ Cookies:      {all good / N expiring soon: list}
 Sheet:        {total} rows, {todayCount} today, latest sale {timestamp}
 
 {Issues section, only if any. Bulleted, one line each, with the specific brand/file/run-id.}
+
+Going quiet:
+  {brand — last sale {date} ({Nd ago})}  ← only if any non-known-quiet brand is >36h cold
+```
 ```
 
 ## When NOT to fix
