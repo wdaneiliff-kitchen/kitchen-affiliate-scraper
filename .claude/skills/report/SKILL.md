@@ -107,7 +107,7 @@ Useful for one-line context: total rows, today's row count, oldest "latest per b
 
 ### 8. Brands going quiet (informational, not an alert)
 
-Surface brands whose latest sale is >36 hours old, EXCLUDING brands already known to be long-quiet (`pickleballapes`, `udrippin`, `gruvn`, `neonic`, `chorus`, `thrive`, `mark`, `gherkin`, `volair`, `gearbox`, `erne`, `engage` — see CLAUDE.md "$0 brands" section). Sort by staleness (most-recent first).
+Surface brands whose latest sale is >36 hours old, EXCLUDING ONLY the brands confirmed truly quiet in CLAUDE.md (`pickleballapes`, `udrippin`, `gruvn`, `neonic`, `chorus`, `thrive`, `mark`, `gherkin` — the 2026-05-15 confirmation). Do NOT exclude `engage`, `forwrd`, `gearbox`, `erne`, `volair` — those are on the "$0 brands to check" watchlist and should be surfaced because we don't yet know whether they're legitimately quiet or whether their scraper is broken. Sort by staleness (most-recent first).
 
 This isn't a 🚨 or ⚠️ — it's an informational nudge so Dane can cross-check on the platform side whether a normally-active brand has had a real lull or whether something subtle broke. Format as a short list at the bottom of the report, e.g.:
 
