@@ -14,7 +14,7 @@
     },
     {
         "domain": ".shopify.com",
-        "expirationDate": 1813961925.75594,
+        "expirationDate": 1814902557.804016,
         "hostOnly": false,
         "httpOnly": true,
         "name": "FPID",
@@ -27,7 +27,7 @@
     },
     {
         "domain": ".shopify.com",
-        "expirationDate": 1810583111,
+        "expirationDate": 1814638609,
         "hostOnly": false,
         "httpOnly": false,
         "name": "_y",
@@ -40,7 +40,7 @@
     },
     {
         "domain": ".shopify.com",
-        "expirationDate": 1813961925.543682,
+        "expirationDate": 1814902554.059617,
         "hostOnly": false,
         "httpOnly": false,
         "name": "_ga",
@@ -66,7 +66,7 @@
     },
     {
         "domain": ".shopify.com",
-        "expirationDate": 1811015101.73962,
+        "expirationDate": 1815070580.967605,
         "hostOnly": false,
         "httpOnly": false,
         "name": "_shopify_essential_",
@@ -92,20 +92,7 @@
     },
     {
         "domain": ".shopify.com",
-        "expirationDate": 1781277355.17786,
-        "hostOnly": false,
-        "httpOnly": false,
-        "name": "_shopify_essential",
-        "path": "/",
-        "sameSite": "lax",
-        "secure": true,
-        "session": false,
-        "storeId": null,
-        "value": "71e3d0fe-81bf-4082-a1c0-63689669aba1"
-    },
-    {
-        "domain": ".shopify.com",
-        "expirationDate": 1810583111,
+        "expirationDate": 1814638609,
         "hostOnly": false,
         "httpOnly": false,
         "name": "_shopify_y",
@@ -118,7 +105,7 @@
     },
     {
         "domain": ".collabs.shopify.com",
-        "expirationDate": 1779480898.818594,
+        "expirationDate": 1783536356.508376,
         "hostOnly": false,
         "httpOnly": true,
         "name": "__cf_bm",
@@ -127,11 +114,11 @@
         "secure": true,
         "session": false,
         "storeId": null,
-        "value": "YlQDaxfkUMtKQkUi.MJ8hNDamjj.yEJdoBFjUDYKoK0-1779479098.939853-1.0.1.1-Nm.ja57Z56hqrZ2h8TA6fxtJIS..5QwZ_TLDZHiVFOzA2FeNPU50IZxw_gc_n3wEXrDGx7nU8Bafj.bE2WvCKQ1kd38AuoyR8zcQhb7yUSTJvwCRbOvE3xjra4nF9gBx"
+        "value": "tbyOKKiQWa27XUsmlw_mdrRGQA3dC6.ihjMes_MrXZg-1783534556.7373807-1.0.1.1-140LTQjrWELfbNAH.bFYQWFA3kAa6b5MzkkbA6zjTReTrLXmOiP.8VAn9ZzHTNlvITMdTC2ZiMadW1s89Xw1sq_8PY1eQB.KicdgvZ9NdFeh1qTd.vg39IUjNGZsVj3Q"
     },
     {
         "domain": ".collabs.shopify.com",
-        "expirationDate": 1779565511.270295,
+        "expirationDate": 1783621009.97858,
         "hostOnly": false,
         "httpOnly": true,
         "name": "_dovetale_session",
@@ -140,11 +127,24 @@
         "secure": true,
         "session": false,
         "storeId": null,
-        "value": "ab7713246b4c34daae60e22b179c91f4"
+        "value": "116525b170c43eb20f4fbe29bb9b5702"
     },
     {
         "domain": ".shopify.com",
-        "expirationDate": 1813961925.555867,
+        "expirationDate": 1788118556,
+        "hostOnly": false,
+        "httpOnly": false,
+        "name": "_fbp",
+        "path": "/",
+        "sameSite": "lax",
+        "secure": false,
+        "session": false,
+        "storeId": null,
+        "value": "fb.1.1780342556008.640792492654161234"
+    },
+    {
+        "domain": ".shopify.com",
+        "expirationDate": 1814902557.572403,
         "hostOnly": false,
         "httpOnly": false,
         "name": "_ga_W6NECZNE63",
@@ -153,11 +153,11 @@
         "secure": false,
         "session": false,
         "storeId": null,
-        "value": "GS2.1.s1779401925$o49$g0$t1779401925$j60$l0$h288971868"
+        "value": "GS2.1.s1780342554$o51$g0$t1780342557$j57$l0$h500058868"
     },
     {
         "domain": ".shopify.com",
-        "expirationDate": 1811015096.956057,
+        "expirationDate": 1815070580.967157,
         "hostOnly": false,
         "httpOnly": true,
         "name": "_merchant_essential",
@@ -166,7 +166,7 @@
         "secure": true,
         "session": false,
         "storeId": null,
-        "value": ":AZ5ROC7WAAEAfwxXG_dp7V1b0teXuRWEXzKsiVP5yvn5RhOpdMrG8diDyzLBrIMGc3tBaKhBqqBxrag_N5YPBQHNhLQCOegDXzBrfILRAhQEyruepnPAr0S9EyyVMMsmFw0CP-ovrba47VJtBIGSwBaz67ni8SvkoDtVl6_lhlUTuF1IUcV3cA8-SUQbsrWO5Mslq6yFWPOHFJhixuE-ZQhC9TDaKcSq9-_2KhMHfiPfiM_M-I79rvTMtASO5VcEYT7nXamsh7CGhBjwGQh6Lz8ZQY1xzrPr9z-Kxnt7-U9Jj4dJO5mcVwja8BfE1P-dvUUwd78u0pqXHDtVLZf2iQ25-tskkZ27AlFbYXqkN6s7ubddKu3vdcRPKNtC9ttO1nI4UWuBtGG0JCp-wP1VgCout7HynflPCxYrQgjNYUM63q3vHQJoTAkry1iTcvRzzrvBjjRQT0f9N3L665ZUERlLeZzPpZWtp4E8VHrFk1N19ex3sQMEy40w5I94cfgA5w_nQnktHwhnWGZ1F92MW218zUMGkmCcbM_vz5IfbUQkHAkGS9z6RghKr0QQVhDa19FaEBqV3Izyu12jGjy1HFvrHm_kKhvyd47_DBi7yjNupClbTySwR_MZ0JeuvjiaD25eIs2KIEKEcG6dCgwNTAGpTg7rhtwAMWbp-iWX2RI8IDLBCqQgCCrySR9I9y9K5fk:"
+        "value": ":AZ7WF78IAAEA4m-tiTqfAeIZD7V35WzAm-sFTgn9swQEIfEuzMufdRQSB_yx_MZCwGog7UvdRqCQlW4wjzfxqNJXVeBjKs8dM1NH3uNQkWRqLww_Vjjn1b3NqQAoq8lrwAqFyq0yvdZGGiHrs0f1zCn2fqnAfxbxd1khCaA2MHA18iny3M0WotXcBGZ0a33yqYC6XF5HFtgaedHBHBpqX0bGABJhZO_NlMyQhv_K_TxL3FGGB47_irCFoxoedWjFuh558re-lPKCk0-_pdWY7iahY-jjz__Nf-rb3IIidveYp8d55Rq61whxdMBoc64OGFjTZbNi5imzOIIwrSVk40UfoYV8QwcZntdbtEK9iMtbieiivFVBqHjEjenaviTl4YjOSSNAYG_MFqEUAC59XryMsVBQsU65wmU_jFDe9JZXwj3N8EdeyvEGT1Jc_ZUcspSWe8Esn0gtqhfC2sjyudSN68qK9DT3wRstg24qteb3kl5lItDbyvFAMaqd9WhwdM1uTS2QLL19hbsm00I8M3fLdzyrQYrqPbXNKqkqauGc9uCRKo_xb9YDXtZ4kqhlluwnvCRIaTxbATee282j_A6BdtKcWLUjwP5gRZMFaPz7kn2kERLJfoQyqbCcWByHzUgyyNw6Y6z_obeTEbJomfOz-TiSjRYmiZNOLD0C3HIqq9dX9Wn0vXZNSfzigBRLUlfCXIYII47QMoSEcfmTsTN19wD8v6tw0HUgHS8HKvphnCfTU-_Rwx-nNlW6Yz3SnDvuUzt00xn3vfR7:"
     },
     {
         "domain": ".shopify.com",
@@ -183,7 +183,7 @@
     },
     {
         "domain": ".shopify.com",
-        "expirationDate": 1779480911,
+        "expirationDate": 1783536409,
         "hostOnly": false,
         "httpOnly": false,
         "name": "_s",
@@ -192,11 +192,11 @@
         "secure": false,
         "session": false,
         "storeId": null,
-        "value": "87fcd56e-c452-42af-9c67-a1f03a36dbee"
+        "value": "734ba201-b3c4-498d-aca2-f0dab4d42a02"
     },
     {
         "domain": ".shopify.com",
-        "expirationDate": 1779480911,
+        "expirationDate": 1783536409,
         "hostOnly": false,
         "httpOnly": false,
         "name": "_shopify_s",
@@ -205,11 +205,11 @@
         "secure": false,
         "session": false,
         "storeId": null,
-        "value": "87fcd56e-c452-42af-9c67-a1f03a36dbee"
+        "value": "734ba201-b3c4-498d-aca2-f0dab4d42a02"
     },
     {
         "domain": ".shopify.com",
-        "expirationDate": 1787177923.72166,
+        "expirationDate": 1787177924.386302,
         "hostOnly": false,
         "httpOnly": false,
         "name": "FPAU",
@@ -222,7 +222,7 @@
     },
     {
         "domain": ".shopify.com",
-        "expirationDate": 1782071097,
+        "expirationDate": 1786126555,
         "hostOnly": false,
         "httpOnly": false,
         "name": "li_fat_id_s",
@@ -243,11 +243,11 @@
         "secure": false,
         "session": true,
         "storeId": null,
-        "value": "2"
+        "value": "1"
     },
     {
         "domain": ".shopify.com",
-        "expirationDate": 1811015096.95602,
+        "expirationDate": 1815070554.429381,
         "hostOnly": false,
         "httpOnly": false,
         "name": "v:a:3",
@@ -256,6 +256,6 @@
         "secure": true,
         "session": false,
         "storeId": null,
-        "value": "%7B%22ac5f6ead72c76dad7395c29e627d80f8%22%3A%7B%22variant%22%3A%22control%22%2C%22createdAt%22%3A1770332319399%7D%2C%2235c130bc304ed6f0d651bd67509bfda7%22%3A%7B%22variant%22%3A%22control%22%2C%22createdAt%22%3A1773092250506%7D%2C%2292aaa34ed4ebc60a56cf9cdda2aaeed5%22%3A%7B%22variant%22%3A%22treatment%22%2C%22createdAt%22%3A1775064098607%7D%2C%22ad10ba017e2c8b3bb500fd9c046673b9%22%3A%7B%22variant%22%3A%22control%22%2C%22createdAt%22%3A1778533180294%7D%7D"
+        "value": "%7B%22ac5f6ead72c76dad7395c29e627d80f8%22%3A%7B%22variant%22%3A%22control%22%2C%22createdAt%22%3A1770332319399%7D%2C%2235c130bc304ed6f0d651bd67509bfda7%22%3A%7B%22variant%22%3A%22control%22%2C%22createdAt%22%3A1773092250506%7D%2C%2292aaa34ed4ebc60a56cf9cdda2aaeed5%22%3A%7B%22variant%22%3A%22treatment%22%2C%22createdAt%22%3A1775064098607%7D%2C%22ad10ba017e2c8b3bb500fd9c046673b9%22%3A%7B%22variant%22%3A%22control%22%2C%22createdAt%22%3A1778533180294%7D%2C%224a60e9217b195ba051db2b8bbe542e52%22%3A%7B%22variant%22%3A%22control%22%2C%22createdAt%22%3A1779901412093%7D%7D"
     }
 ]
